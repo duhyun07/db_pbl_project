@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 공통 가이드</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/" aria-current="page">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">00 · 모두 먼저 읽기</p>
+    <h1>공통 가이드</h1>
+    <p class="intro">우리가 뭘 만들고, 어떤 기준으로 평가받고, 어떤 규칙으로 같이 작업하는지 정리한 페이지예요. 역할 페이지 보기 전에 한 번만 읽어 주세요.</p>
+
+    <p class="section-label">WHAT · 무엇을 만드나</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>Ubuntu 보안 취약점·패치 관리 DB 시스템</h2>
+        <p>Ubuntu 24.04 서버에 깔린 <strong>Apache, OpenSSH</strong>의 보안 취약점(CVE)과 위험도(CVSS), Ubuntu 패키지별 수정 상태를 DB에 넣고, 서버별로 <strong>누가 · 언제까지 · 어떤 상태로</strong> 조치하고 있는지 관리합니다.</p>
+        <p>CVE와 패치 정보는 <strong>실제 데이터</strong>(10~15건), 서버·담당자·조치 이력은 <strong>가상 데이터</strong>를 씁니다.</p>
+      </div>
+      <div class="panel">
+        <h2>이것만은 기억하기</h2>
+        <ul>
+          <li>메인은 <strong>DB 설계와 SQL</strong>이에요. Python은 그걸 보여주는 도구고요.</li>
+          <li>LLM은 시간이 남을 때 붙이는 추가 기능이에요. <strong>LLM 없이도 시연이 다 돼야 합니다.</strong></li>
+          <li>기존 보안 도구(Wazuh, Trivy 등)를 대체하려는 게 아니에요. 자동 스캔이나 자동 패치는 안 만듭니다.</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="section-label">GRADING · 교수님 채점 기준과 우리 대응</p>
+    <section class="panel table-wrap">
+      <table>
+        <thead><tr><th>교수님 기준</th><th>우리가 보여줄 것</th><th>주 담당</th></tr></thead>
+        <tbody>
+          <tr><td>1. DB로 어떤 문제를 해결하나</td><td>"새 OpenSSH 취약점이 나왔다 → 어느 서버가 영향받고, 누가 언제까지 조치하고, 지금 몇 %나 끝났나?"를 쿼리 몇 개로 답한다</td><td>전원</td></tr>
+          <tr><td>2. 데이터를 어떻게 모아서 정리했나</td><td>NVD·Ubuntu JSON 수집 → 필드-컬럼 매핑 문서 → ERD·정규화 → 가상 데이터 생성 규칙</td><td>④, ①</td></tr>
+          <tr><td>3. SQL 정확성·다양성·<strong>효율성</strong></td><td>분석 쿼리 6~7개(JOIN, GROUP BY, HAVING, CASE, 서브쿼리), 트리거·뷰, 대량 데이터에서 인덱스 전후 EXPLAIN 비교</td><td>②, ①</td></tr>
+          <tr><td>4. 실제로 효율적이고 쓸모 있나</td><td>기존 방식(서버마다 접속해서 버전 확인 → 엑셀 정리) vs 쿼리 실행 시간 비교, 자동 이력 기록</td><td>②, ③</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="section-label">SCHEMA · 테이블 초안 (11/23 확정 예정)</p>
+    <section class="panel table-wrap">
+      <table>
+        <thead><tr><th>테이블</th><th>뭘 저장하나</th><th>키</th><th>데이터</th></tr></thead>
+        <tbody>
+          <tr><td><code>software</code></td><td>Apache, OpenSSH + Ubuntu 소스 패키지명</td><td>software_id</td><td>실제</td></tr>
+          <tr><td><code>vulnerabilities</code></td><td>CVE 번호, 설명, CVSS 점수·버전·벡터·출처, Ubuntu priority</td><td>cve_id</td><td>실제</td></tr>
+          <tr><td><code>cve_package_status</code></td><td>Ubuntu 릴리스·패키지별 영향 상태, 수정 버전, USN</td><td>(cve_id, software_id, ubuntu_release)</td><td>실제</td></tr>
+          <tr><td><code>systems</code></td><td>서버 호스트명, Ubuntu 버전, 환경(prod/dev)</td><td>system_id</td><td>가상</td></tr>
+          <tr><td><code>installed_software</code></td><td>서버별 설치 패키지와 버전</td><td>(system_id, software_id)</td><td>가상</td></tr>
+          <tr><td><code>staff</code></td><td>조치 담당자</td><td>staff_id</td><td>가상</td></tr>
+          <tr><td><code>system_vulnerabilities</code></td><td>서버별 조치 건: 상태, 담당자, 기한, 완료일</td><td>sv_id, UNIQUE(system_id, cve_id)</td><td>가상</td></tr>
+          <tr><td><code>patch_history</code></td><td>상태 변경 이력 (트리거가 자동 기록)</td><td>history_id</td><td>가상</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="section-label">VALUES · 상태값 (모두 이 값만 쓰기)</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>Ubuntu 패키지 상태</h2>
+        <p><code>cve_package_status.status</code></p>
+        <ul>
+          <li><code>released</code> 수정 패키지가 나옴 (fixed_version 필수)</li>
+          <li><code>needed</code> 영향 있음, 아직 수정 안 됨</li>
+          <li><code>not-affected</code> 영향 없음</li>
+          <li><code>deferred</code> / <code>ignored</code> 보류·무시</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h2>서버별 조치 상태</h2>
+        <p><code>system_vulnerabilities.status</code></p>
+        <ul>
+          <li><code>open</code> 확인됨, 아직 착수 안 함</li>
+          <li><code>in_progress</code> 조치 중</li>
+          <li><code>patched</code> 패치 완료 (patched_at 필수)</li>
+          <li><code>risk_accepted</code> 위험 수용 (조치 안 하기로 결정)</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="section-label">REPO · 폴더 구조</p>
+    <section class="panel">
+<pre>db_pbl_project/
+├── db/        schema.sql, seed.sql            ← ①
+├── sql/       analysis_queries.sql, 성능 비교   ← ②
+├── data/      collect_cve.py, load_db.py, generate_synthetic.py, 원본 JSON  ← ④
+├── app/       Streamlit 앱                     ← ③
+├── tests/     무결성 테스트                     ← ①
+├── docs/      erd, db_dictionary, 매핑 문서, 발표 자료
+├── docker-compose.yml   (MySQL 8.0, 다 같이 이걸로 실행)
+└── index.html, guide/, roles/   ← 지금 보고 있는 팀 사이트</pre>
+    </section>
+
+    <p class="section-label">RULES · 협업 규칙</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>Git</h2>
+        <ul>
+          <li><code>feature/역할-작업명</code> 브랜치에서 작업 → PR로 main에 합치기</li>
+          <li>작업 시작 전에 <code>git pull</code> 먼저</li>
+          <li><code>git add .</code> 대신 내가 바꾼 파일만 골라서 add</li>
+          <li><code>.env</code>, 비밀번호, API 키는 절대 커밋 금지</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h2>데이터</h2>
+        <ul>
+          <li><strong>실제 데이터(CVE)와 가상 데이터는 섞지 않기</strong></li>
+          <li>CVSS나 패치 정보가 없으면 지어내지 말고 <code>NULL</code></li>
+          <li>테이블·컬럼 이름은 snake_case, <code>docs/db_dictionary.md</code> 기준</li>
+          <li>스키마를 바꿔야 하면 ①에게 먼저 말하기 (다른 사람 코드가 깨져요)</li>
+        </ul>
+      </div>
+    </section>
+
+    <p class="section-label">TERMS · 자주 나오는 용어</p>
+    <section class="panel table-wrap">
+      <table>
+        <tbody>
+          <tr><td>CVE</td><td>공개된 보안 취약점마다 붙는 고유 번호 (예: CVE-2024-6387)</td></tr>
+          <tr><td>CVSS</td><td>취약점 위험도 점수 0.0~10.0. 버전(3.1, 4.0)마다 계산 방식이 달라서 버전도 같이 저장해요</td></tr>
+          <tr><td>USN</td><td>Ubuntu Security Notice. Ubuntu가 내는 보안 패치 공지 번호</td></tr>
+          <tr><td>백포트</td><td>Ubuntu는 새 버전으로 올리지 않고 기존 버전에 보안 수정만 넣기도 해요. 그래서 버전 숫자만 보고 취약 여부를 판단하면 틀릴 수 있어요</td></tr>
+          <tr><td>noble</td><td>Ubuntu 24.04 LTS의 코드명</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <p><a href="../">← 대시보드</a></p>
+      <p>궁금한 건 단톡에 바로 물어보기</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 02 SQL 분석·성능</title>
+  <link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="sub" data-role="02-sql">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../../guide/">공통</a>
+        <a href="../../github/">GitHub</a>
+        <a href="../01-db/">① DB</a>
+        <a href="../02-sql/" aria-current="page">② SQL</a>
+        <a href="../03-app/">③ Python</a>
+        <a href="../04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">02 · 담당 [이름]</p>
+    <h1>SQL 분석·성능</h1>
+    <p class="intro">교수님이 SQL의 정확성·다양성에 더해 <strong>효율성</strong>까지 본다고 하셨어요. 대부분의 팀은 효율성까지 안 보여주니까, 이 역할이 우리 발표에서 제일 차별화되는 부분이 될 거예요.</p>
+
+    <p class="section-label">WHY · 왜 중요한가</p>
+    <div class="callout">채점 기준 <strong>3(SQL 정확성·다양성·효율성)</strong>과 <strong>4(실무 가치)</strong>를 직접 책임집니다.</div>
+
+    <p class="section-label">TODO · 할 일 (체크하면 이 브라우저에 저장돼요)</p>
+    <section class="panel">
+      <ul class="checklist" data-key="02-sql">
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> 분석 질문 6~7개를 문장으로 정리 (아래 후보 참고)</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> 질문마다 필요한 테이블·컬럼을 적어 보기</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의에서 질문 확정 → ①과 스키마로 다 답할 수 있는지 확인</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/24</span> <code>seed.sql</code> 데이터로 쿼리 6~7개 동작시키기</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> 손으로 계산한 기댓값과 쿼리 결과 비교한 검증표</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> 집계 단위 구분 쿼리, HAVING + 서브쿼리 쿼리 추가</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> <code>query_catalog.json</code> 작성 → ③에게 전달</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> ④의 대량 데이터 적재 후 인덱스 없이 실행 시간·EXPLAIN 기록</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/28</span> 인덱스 추가 후 다시 측정 → 전후 비교표</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/29</span> 쿼리 작성 방식 비교 (JOIN vs 상관 서브쿼리, NOT IN vs NOT EXISTS)</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/30~</span> 발표: SQL 문제 해결 + 성능 분석 파트</span></label></li>
+      </ul>
+      <p class="progress"></p>
+    </section>
+
+    <p class="section-label">NOTE · 참고</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>분석 질문 후보</h2>
+        <ol>
+          <li>특정 서버에 관련된 취약점은?</li>
+          <li>CVSS N점 이상인 미해결 취약점과 해당 서버·담당자는?</li>
+          <li>미해결 취약점이 있는 서버는 몇 대?</li>
+          <li>Apache vs OpenSSH 취약점 수·위험도 분포는?</li>
+          <li>처리 기한을 넘긴 미해결 건과 담당자는?</li>
+          <li>서버별 패치 완료율은?</li>
+          <li>기간별 완료된 조치 건수는?</li>
+        </ol>
+        <p>임계값(9.0 / 7.0)은 실제 데이터를 넣어 보고 정해요. Apache·OpenSSH엔 9점대 CVE가 생각보다 적을 수 있어요.</p>
+      </div>
+    </section>
+
+    <p class="section-label">OUTPUT · 결과물</p>
+    <section class="panel table-wrap">
+      <table>
+        <thead><tr><th>파일</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td><code>sql/analysis_queries.sql</code></td><td>분석 쿼리 + 질문 주석</td></tr>
+          <tr><td><code>sql/query_catalog.json</code></td><td>id, 설명, SQL, 파라미터 — ③과 LLM이 이걸 씀</td></tr>
+          <tr><td><code>docs/query_validation.md</code></td><td>기댓값 vs 결과 검증표</td></tr>
+          <tr><td><code>docs/performance.md</code></td><td>인덱스 전후, 쿼리 방식별 비교표 + EXPLAIN 캡처</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="section-label">HANDOFF · 주고받는 것</p>
+    <section class="grid-2">
+      <div class="panel"><h2>내가 주는 것</h2><ul><li>query_catalog.json → ③</li><li>추천 인덱스 목록 → ①</li></ul></div>
+      <div class="panel"><h2>내가 받는 것</h2><ul><li>스키마·시드 ← ①</li><li>성능용 대량 데이터 ← ④</li></ul></div>
+    </section>
+
+    <p class="section-label">CAUTION · 주의할 점</p>
+    <section class="panel">
+      <ul>
+          <li><strong>집계 단위 주의:</strong> '서로 다른 CVE 수'(<code>COUNT(DISTINCT cve_id)</code>), '영향받는 서버 수'(<code>COUNT(DISTINCT system_id)</code>), '조치 건수'(<code>COUNT(*)</code>)는 다른 숫자예요. 이걸 한 쿼리로 나란히 보여주면 발표에서 좋아요.</li>
+          <li><code>WHERE cvss_score &gt;= 9</code>는 CVSS가 NULL인 행을 조용히 빼요. NULL을 어떻게 다룰지 쿼리마다 정해 두세요.</li>
+          <li>실행 시간은 한 번만 재지 말고 여러 번 재서 평균 내기. 측정 조건(데이터 크기, MySQL 버전)도 같이 적어 두세요.</li>
+          <li>쿼리는 반드시 파라미터 자리(<code>%s</code>)로 써서 넘기기. ③이 문자열을 이어 붙이지 않게요.</li>
+      </ul>
+    </section>
+
+    <p class="section-label">LINKS · 참고 자료</p>
+    <section class="panel links">
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/explain.html" target="_blank" rel="noopener"><strong>MySQL · EXPLAIN</strong><span>실행 계획 보기 ↗</span></a>
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/explain-output.html" target="_blank" rel="noopener"><strong>MySQL · EXPLAIN 출력 읽는 법</strong><span>type, rows, key ↗</span></a>
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/create-index.html" target="_blank" rel="noopener"><strong>MySQL · CREATE INDEX</strong><span>복합 인덱스 ↗</span></a>
+    </section>
+
+    <footer>
+      <p><a href="../../">← 대시보드</a></p>
+      <p>막히면 단톡에 바로 공유</p>
+    </footer>
+  </main>
+  <script src="../../assets/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 01 DB 설계·구축</title>
+  <link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="sub" data-role="01-db">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../../guide/">공통</a>
+        <a href="../../github/">GitHub</a>
+        <a href="../01-db/" aria-current="page">① DB</a>
+        <a href="../02-sql/">② SQL</a>
+        <a href="../03-app/">③ Python</a>
+        <a href="../04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">01 · 담당 고두현 (팀장)</p>
+    <h1>DB 설계·구축</h1>
+    <p class="intro">스키마는 팀 전체가 따르는 연동 규격이에요. 이게 늦으면 ②③④가 전부 같이 밀리니까, 11/23 회의 전까지 초안을 내는 게 제일 중요합니다.</p>
+
+    <p class="section-label">WHY · 왜 중요한가</p>
+    <div class="callout">채점 기준 <strong>2(정형화·ERD)</strong>와 <strong>3(SQL 정확성)</strong>의 바탕이에요. 무결성을 앱 코드가 아니라 <strong>DB 제약조건으로</strong> 보장하는 걸 보여주는 게 목표입니다.</div>
+
+    <p class="section-label">TODO · 할 일 (체크하면 이 브라우저에 저장돼요)</p>
+    <section class="panel">
+      <ul class="checklist" data-key="01-db">
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> GitHub 레포에 폴더 구조 + <code>docker-compose.yml</code>(MySQL 8.0) 올리기</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> 설계 결정 정리: CVSS 저장 방식, 키 설계, 상태값, 영향 판정 위치</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> ERD 초안 (8개 테이블, 관계·카디널리티)</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> <code>schema.sql</code> 초안: PK·FK·UNIQUE·CHECK, ON DELETE 정책</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> <code>seed.sql</code> 최소 더미 데이터 (기한 초과·완료 건 포함)</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의: ERD 합의, ④의 JSON 샘플로 빠진 컬럼 없는지 확인</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> ②의 분석 질문을 스키마로 전부 답할 수 있는지 하나씩 확인</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> <code>docs/db_dictionary.md</code> 작성 → 스키마 동결 공지</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/24</span> 트리거: 조치 상태가 바뀌면 <code>patch_history</code>에 자동 기록</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> 뷰 2개: <code>v_open_risks</code>, <code>v_system_patch_rate</code></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> ④의 실제 CVE 적재 지원 및 확인</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> 무결성 테스트 (중복 CVE, 잘못된 FK, CHECK 위반, 트리거) 실행·캡처</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> ③의 상태 변경이 트랜잭션으로 묶였는지 확인, 통합 테스트</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/28~</span> 발표: ERD·정규화·무결성 파트 + 발표 자료 취합·리허설 진행</span></label></li>
+      </ul>
+      <p class="progress"></p>
+    </section>
+
+    <p class="section-label">OUTPUT · 결과물</p>
+    <section class="panel table-wrap">
+      <table>
+        <thead><tr><th>파일</th><th>내용</th></tr></thead>
+        <tbody>
+          <tr><td><code>db/schema.sql</code></td><td>테이블, 제약조건, 트리거, 뷰</td></tr>
+          <tr><td><code>db/seed.sql</code></td><td>개발용 더미 데이터 (가짜 CVE 번호 사용)</td></tr>
+          <tr><td><code>docs/erd.md · erd.png</code></td><td>ERD</td></tr>
+          <tr><td><code>docs/db_dictionary.md</code></td><td>컬럼명·타입·허용값·의미 — 팀 공통 규격</td></tr>
+          <tr><td><code>tests/integrity_tests.sql</code></td><td>일부러 실패해야 하는 INSERT/UPDATE 모음</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="section-label">HANDOFF · 주고받는 것</p>
+    <section class="grid-2">
+      <div class="panel"><h2>내가 주는 것</h2><ul><li>스키마·시드·데이터 사전 → ②③④</li><li>트리거 사용 규칙(updated_by) → ③</li></ul></div>
+      <div class="panel"><h2>내가 받는 것</h2><ul><li>분석 질문 6~7개 ← ②</li><li>수집 가능한 JSON 필드 목록 ← ④</li><li>상태 변경 화면 흐름 ← ③</li></ul></div>
+    </section>
+
+    <p class="section-label">CAUTION · 주의할 점</p>
+    <section class="panel">
+      <ul>
+          <li>트리거는 <strong>누가</strong> 바꿨는지 몰라요. <code>system_vulnerabilities.updated_by</code>를 두고 트리거가 <code>NEW.updated_by</code>를 기록하게 하세요. ③과 미리 약속해야 합니다.</li>
+          <li>PK·FK 외에 추가 인덱스는 만들지 마세요. ②가 인덱스 전후 성능 비교를 할 거예요.</li>
+          <li>Debian 버전 문자열은 DB에서 크기 비교가 안 돼요. 영향 판정은 Python(④)이 하고, DB엔 근거(설치 버전, 수정 버전)를 저장합니다.</li>
+          <li><code>system_vulnerabilities</code>는 파생 데이터가 아니에요. 담당자·기한·상태는 조인으로 만들 수 없는 업무 데이터라는 점을 발표에서 설명하세요.</li>
+      </ul>
+    </section>
+
+    <p class="section-label">LINKS · 참고 자료</p>
+    <section class="panel links">
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/create-trigger.html" target="_blank" rel="noopener"><strong>MySQL · CREATE TRIGGER</strong><span>트리거 문법 ↗</span></a>
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/create-table-check-constraints.html" target="_blank" rel="noopener"><strong>MySQL · CHECK 제약조건</strong><span>8.0.16+ ↗</span></a>
+          <a href="https://dev.mysql.com/doc/refman/8.0/en/create-table-foreign-keys.html" target="_blank" rel="noopener"><strong>MySQL · FOREIGN KEY</strong><span>ON DELETE 정책 ↗</span></a>
+    </section>
+
+    <footer>
+      <p><a href="../../">← 대시보드</a></p>
+      <p>막히면 단톡에 바로 공유</p>
+    </footer>
+  </main>
+  <script src="../../assets/site.js"></script>
+</body>
+</html>
