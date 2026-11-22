@@ -96,6 +96,46 @@
       </div>
     </section>
 
+    <p class="section-label">FLOW · 데이터 흐름 (누가 무엇을 넘기나)</p>
+    <section class="flow">
+      <div class="flow-step data">
+        <h3>④ 수집·적재</h3>
+        <p>NVD·Ubuntu에서 원본 JSON을 받아 정리해 넣고, 시연용·성능용 가상 데이터를 만들어요.</p>
+        <p class="files"><code>data/raw/</code> <code>load_db.py</code> <code>generate_synthetic.py</code></p>
+      </div>
+      <div class="flow-step db">
+        <h3>① 스키마·제약조건·트리거</h3>
+        <p>PK·FK·CHECK가 잘못된 데이터를 거부하고, 상태가 바뀌면 트리거가 이력을 남겨요. 뷰가 "미해결·완료율"을 정의해요.</p>
+        <p class="files"><code>db/schema.sql</code> <code>docs/db_dictionary.md</code></p>
+      </div>
+      <div class="flow-step sql">
+        <h3>② 쿼리·catalog</h3>
+        <p>분석 질문을 쿼리로 만들고 손 계산으로 검증한 뒤, 검증된 쿼리만 catalog에 담아요. 대량 데이터로 인덱스 효과를 재요.</p>
+        <p class="files"><code>sql/analysis_queries.sql</code> <code>sql/query_catalog.json</code></p>
+      </div>
+      <div class="flow-step app">
+        <h3>③ 화면</h3>
+        <p>catalog의 쿼리를 그대로 실행해 보여주고, 상태 변경은 트랜잭션으로 저장해요. 이력은 ①의 트리거가 기록해요.</p>
+        <p class="files"><code>app/db.py</code> <code>app/queries.py</code> <code>app/pages/</code></p>
+      </div>
+    </section>
+
+    <section class="panel table-wrap" style="margin-top:22px">
+      <table>
+        <thead><tr><th>보내는 사람 → 받는 사람</th><th>무엇을 (파일)</th><th>언제</th></tr></thead>
+        <tbody>
+          <tr><td>④ → ①</td><td>수집 가능한 필드 목록, ENUM에 없는 상태값 (<a href="../roles/04-data/guide.html#step-4">④ 가이드 4단계</a>)</td><td>11/23</td></tr>
+          <tr><td>① → 모두</td><td>확정 스키마 <code>db/schema.sql</code>, <code>docs/db_dictionary.md</code>, 개발용 <code>db/seed.sql</code></td><td>11/23</td></tr>
+          <tr><td>④ → DB</td><td>실제 CVE 데이터: <code>data/raw/</code> + <code>data/load_db.py</code> (<a href="../roles/04-data/guide.html#step-6">6단계</a>)</td><td>11/25</td></tr>
+          <tr><td>② → ③</td><td>검증된 쿼리 <code>sql/query_catalog.json</code> (<a href="../roles/02-sql/guide.html#step-7">② 가이드 7단계</a>)</td><td>11/26</td></tr>
+          <tr><td>④ → ③</td><td>시연 시나리오: <code>generate_synthetic.py --mode demo</code> 결과 (<a href="../roles/04-data/guide.html#step-8">8단계</a>)</td><td>11/26</td></tr>
+          <tr><td>④ → ②</td><td>대량 데이터 명령 <code>--mode bench --servers N</code> (<a href="../roles/04-data/guide.html#step-9">9단계</a>)</td><td>11/27</td></tr>
+          <tr><td>② → ①</td><td>추천 인덱스와 전후 비교 근거 (<a href="../roles/02-sql/guide.html#step-9">② 가이드 9단계</a>)</td><td>11/28</td></tr>
+          <tr><td>③ → 발표</td><td>화면 캡처, 시연 순서 (<a href="../roles/03-app/guide.html#step-10">③ 가이드 10단계</a>)</td><td>11/30~</td></tr>
+        </tbody>
+      </table>
+    </section>
+
     <p class="section-label">REPO · 폴더 구조</p>
     <section class="panel">
 <pre>vuln-mgmt/

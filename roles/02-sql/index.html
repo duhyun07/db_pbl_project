@@ -24,6 +24,7 @@
     <p class="eyebrow">02 · 담당 [이름]</p>
     <h1>SQL 분석·성능</h1>
     <p class="intro">교수님이 SQL의 정확성·다양성에 더해 <strong>효율성</strong>까지 본다고 하셨어요. 대부분의 팀은 효율성까지 안 보여주니까, 이 역할이 우리 발표에서 제일 차별화되는 부분이 될 거예요.</p>
+    <a class="guide-link" href="guide.html">구현 가이드: 처음부터 완성까지 따라 하기 →</a>
 
     <p class="section-label">WHY · 왜 중요한가</p>
     <div class="callout">채점 기준 <strong>3(SQL 정확성·다양성·효율성)</strong>과 <strong>4(실무 가치)</strong>를 직접 책임집니다.</div>
@@ -31,17 +32,17 @@
     <p class="section-label">TODO · 할 일 (체크하면 이 브라우저에 저장돼요)</p>
     <section class="panel">
       <ul class="checklist" data-key="02-sql">
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> 분석 질문 6~7개를 문장으로 정리 (아래 후보 참고)</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> 질문마다 필요한 테이블·컬럼을 적어 보기</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의에서 질문 확정 → ①과 스키마로 다 답할 수 있는지 확인</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/24</span> <code>seed.sql</code> 데이터로 쿼리 6~7개 동작시키기</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/25</span> 손으로 계산한 기댓값과 쿼리 결과 비교한 검증표</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/26</span> 집계 단위 구분 쿼리, HAVING + 서브쿼리 쿼리 추가</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/26</span> <code>query_catalog.json</code> 작성 → ③에게 전달</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/27</span> ④의 대량 데이터 적재 후 인덱스 없이 실행 시간·EXPLAIN 기록</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/28</span> 인덱스 추가 후 다시 측정 → 전후 비교표</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/29</span> 쿼리 작성 방식 비교 (JOIN vs 상관 서브쿼리, NOT IN vs NOT EXISTS)</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/30~</span> 발표: SQL 문제 해결 + 성능 분석 파트</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> 분석 질문 6~7개를 문장으로 정리 (아래 후보 참고) <a class="step-link" href="guide.html#step-3">가이드 3단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> 질문마다 필요한 테이블·컬럼을 적어 보기 <a class="step-link" href="guide.html#step-2">가이드 2단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의에서 질문 확정 → ①과 스키마로 다 답할 수 있는지 확인 <a class="step-link" href="guide.html#step-3">가이드 3단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/24</span> <code>seed.sql</code> 데이터로 쿼리 6~7개 동작시키기 <a class="step-link" href="guide.html#step-3">가이드 3단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> 손으로 계산한 기댓값과 쿼리 결과 비교한 검증표 <a class="step-link" href="guide.html#step-6">가이드 6단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> 집계 단위 구분 쿼리, HAVING + 서브쿼리 쿼리 추가 <a class="step-link" href="guide.html#step-4">가이드 4단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> <code>query_catalog.json</code> 작성 → ③에게 전달 <a class="step-link" href="guide.html#step-7">가이드 7단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> ④의 대량 데이터 적재 후 인덱스 없이 실행 시간·EXPLAIN 기록 <a class="step-link" href="guide.html#step-8">가이드 8단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/28</span> 인덱스 추가 후 다시 측정 → 전후 비교표 <a class="step-link" href="guide.html#step-9">가이드 9단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/29</span> 쿼리 작성 방식 비교 (JOIN vs 상관 서브쿼리, NOT IN vs NOT EXISTS) <a class="step-link" href="guide.html#step-10">가이드 10단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/30~</span> 발표: SQL 문제 해결 + 성능 분석 파트 <a class="step-link" href="guide.html#step-11">가이드 11단계 →</a></span></label></li>
       </ul>
       <p class="progress"></p>
     </section>

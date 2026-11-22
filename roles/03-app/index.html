@@ -24,6 +24,7 @@
     <p class="eyebrow">03 · 담당 [이름]</p>
     <h1>Python 프로그램</h1>
     <p class="intro">DB와 SQL이 실제로 쓸모 있다는 걸 화면으로 보여주는 역할이에요. 화면은 3개만 만들고, 예쁘게보다 <strong>시연이 안 끊기게</strong>가 목표입니다.</p>
+    <a class="guide-link" href="guide.html">구현 가이드: 처음부터 완성까지 따라 하기 →</a>
 
     <p class="section-label">WHY · 왜 중요한가</p>
     <div class="callout">채점 기준 <strong>4(실무 가치)</strong>를 눈으로 보여주는 부분이고, 교수님이 권장한 "다른 언어로 완성도 높이기"에 해당해요.</div>
@@ -31,16 +32,16 @@
     <p class="section-label">TODO · 할 일 (체크하면 이 브라우저에 저장돼요)</p>
     <section class="panel">
       <ul class="checklist" data-key="03-app">
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> Python 가상환경 + <code>streamlit</code>, <code>pymysql</code>, <code>python-dotenv</code> 설치</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> <code>app/db.py</code>: <code>.env</code>에서 접속 정보 읽어 연결하는 모듈</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/23</span> 빈 화면 3개 뼈대: 대시보드·분석 / 검색·패치 관리 / 자연어 질의</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/24</span> 대시보드 지표: 서버 수, 취약점 수, 미해결, 고위험, 완료율 (①의 뷰 조회)</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/25</span> 검색: CVE 번호, 소프트웨어, CVSS 범위, 상태 필터</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/26</span> 패치 상태 변경 (트랜잭션 + <code>updated_by</code>) → 이력 화면에서 확인</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/27</span> ②의 분석 쿼리 결과를 표·차트로 + 전체 통합 테스트</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/28</span> (여유 되면) LLM: 질문 → 템플릿·파라미터 선택 → 실행 → 요약</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/29</span> LLM 실패 시 드롭다운으로 같은 템플릿 고르는 대체 경로</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/30~</span> 시연 시나리오 리허설, 실행 가이드 작성</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> Python 가상환경 + <code>streamlit</code>, <code>pymysql</code>, <code>python-dotenv</code> 설치 <a class="step-link" href="guide.html#step-2">가이드 2단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> <code>app/db.py</code>: <code>.env</code>에서 접속 정보 읽어 연결하는 모듈 <a class="step-link" href="guide.html#step-3">가이드 3단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> 빈 화면 3개 뼈대: 대시보드·분석 / 검색·패치 관리 / 자연어 질의 <a class="step-link" href="guide.html#step-1">가이드 1단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/24</span> 대시보드 지표: 서버 수, 취약점 수, 미해결, 고위험, 완료율 (①의 뷰 조회) <a class="step-link" href="guide.html#step-5">가이드 5단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> 검색: CVE 번호, 소프트웨어, CVSS 범위, 상태 필터 <a class="step-link" href="guide.html#step-6">가이드 6단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> 패치 상태 변경 (트랜잭션 + <code>updated_by</code>) → 이력 화면에서 확인 <a class="step-link" href="guide.html#step-7">가이드 7단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> ②의 분석 쿼리 결과를 표·차트로 + 전체 통합 테스트 <a class="step-link" href="guide.html#step-8">가이드 8단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/28</span> (여유 되면) LLM: 질문 → 템플릿·파라미터 선택 → 실행 → 요약 <a class="step-link" href="guide.html#step-11">가이드 11단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/29</span> LLM 실패 시 드롭다운으로 같은 템플릿 고르는 대체 경로 <a class="step-link" href="guide.html#step-11">가이드 11단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/30~</span> 시연 시나리오 리허설, 실행 가이드 작성 <a class="step-link" href="guide.html#step-10">가이드 10단계 →</a></span></label></li>
       </ul>
       <p class="progress"></p>
     </section>

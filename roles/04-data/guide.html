@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 04 데이터 구현 가이드</title>
+  <link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="sub" data-role="04-data">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../../guide/">공통</a>
+        <a href="../../github/">GitHub</a>
+        <a href="../01-db/">① DB</a>
+        <a href="../02-sql/">② SQL</a>
+        <a href="../03-app/">③ Python</a>
+        <a href="../04-data/" aria-current="page">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">04 · 구현 가이드</p>
+    <h1>데이터 수집·정리 구현 가이드</h1>
+    <p class="intro">"어디서 모아서 → 어떤 규칙으로 정리해 → 어떻게 넣고 → 맞게 들어갔는지 어떻게 확인했나"를 파일 단위로 따라가는 안내서예요. 이 흐름 자체가 채점 기준 2(수집·정형화)의 발표 내용이 돼요. <a href="./">← 역할 페이지로</a></p>
+
+    <div class="callout warn" style="margin-top:20px"><strong>정확성 규칙:</strong> 이 페이지의 CVE 번호(<code>CVE-0000-xxxx</code>), 점수, 버전, USN은 모두 <strong>예시용 가짜 데이터</strong>예요. API 주소와 JSON 필드 이름은 2026-11-22에 실제로 요청해서 확인한 것만 썼고, 확인하지 못한 곳은 "확인 필요"로 표시했어요. 실제 값은 반드시 수집한 원본 JSON에서만 가져오세요.</div>
+
+    <p class="section-label">CONTENTS · 목차</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>단계</h2>
+        <ol class="toc">
+          <li><a href="#step-1">폴더 구조와 환경</a></li>
+          <li><a href="#step-2">수집 대상 고르기</a></li>
+          <li><a href="#step-3">collect_cve.py — 원본 수집</a></li>
+          <li><a href="#step-4">원본 JSON 구조 읽기</a></li>
+          <li><a href="#step-5">값 추출 규칙과 data_mapping.md</a></li>
+          <li><a href="#step-6">load_db.py — DB 적재</a></li>
+          <li><a href="#step-7">원본 vs DB 검증</a></li>
+          <li><a href="#step-8">시연용 가상 데이터</a></li>
+          <li><a href="#step-9">성능용 대량 데이터</a></li>
+          <li><a href="#step-10">영향 판정과 버전 비교</a></li>
+          <li><a href="#step-11">(선택) dpkg-query 적재</a></li>
+        </ol>
+      </div>
+      <div class="panel" id="files">
+        <h2>이 가이드를 끝내면 만들어지는 파일</h2>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><td><code>data/requirements.txt</code></td><td>④ 스크립트용 패키지</td></tr>
+              <tr><td><code>data/cve_list.csv</code></td><td>수집 대상 CVE 목록</td></tr>
+              <tr><td><code>data/collect_cve.py</code></td><td>NVD·Ubuntu 원본 수집</td></tr>
+              <tr><td><code>data/raw/</code></td><td>원본 JSON (검증 근거, 커밋함)</td></tr>
+              <tr><td><code>data/load_db.py</code></td><td>추출·정제 후 DB 적재</td></tr>
+              <tr><td><code>data/validate_db.py</code></td><td>원본 vs DB 대조</td></tr>
+              <tr><td><code>data/generate_synthetic.py</code></td><td>가상 데이터 (demo / bench)</td></tr>
+              <tr><td><code>docs/data_mapping.md</code></td><td>필드 → 컬럼 매핑, 정제 규칙</td></tr>
+              <tr><td><code>docs/data_validation.md</code></td><td>대조 결과</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <p class="section-label">STEPS · 단계별 구현</p>
+
+    <!-- STEP 1 -->
+    <section class="panel step" id="step-1">
+      <h2><span class="step-no">1</span>폴더 구조와 환경</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/</code> 아래 구조와 <code>data/requirements.txt</code>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>수집(인터넷 → 파일)과 적재(파일 → DB)를 별도 스크립트로 나눠요. 원본 JSON을 파일로 남겨 두면 API가 바뀌거나 막혀도 다시 적재할 수 있고, "이 값은 이 원본 파일의 이 필드에서 왔다"를 발표에서 증명할 수 있어요.</p>
+      <h3 class="part">③ 구조와 명령어</h3>
+<pre>data/
+├── requirements.txt         ← 이 단계
+├── cve_list.csv             ← 2단계: 수집할 CVE 목록 (직접 작성)
+├── collect_cve.py           ← 3단계
+├── raw/
+│   ├── nvd/CVE-….json       ← 3단계 결과 (원본 그대로)
+│   ├── ubuntu/CVE-….json
+│   └── failed.csv           ← 실패한 CVE 목록
+├── load_db.py               ← 6단계
+├── validate_db.py           ← 7단계
+├── generate_synthetic.py    ← 8·9단계
+└── load_dpkg.py             ← 11단계 (선택)</pre>
+      <p><code>data/requirements.txt</code></p>
+<pre>requests==2.34.2
+pymysql==1.2.4
+cryptography==50.0.2
+python-dotenv==1.2.4
+python-debian==1.1.1</pre>
+<pre># 레포 루트에서 (③이 만든 .venv가 있으면 그걸 켜고)
+pip install -r data/requirements.txt</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python -c "import requests, pymysql, dotenv, debian; print('ok')"</pre>
+<pre class="out">ok</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ModuleNotFoundError: No module named 'debian'</td><td>패키지 이름(<code>python-debian</code>)과 import 이름(<code>debian</code>)이 다름</td><td><code>pip install python-debian</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>②도 성능용 데이터를 직접 만들 때 이 requirements를 설치해요.</p>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="panel step" id="step-2">
+      <h2><span class="step-no">2</span>수집 대상 고르기</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/cve_list.csv</code> — 수집할 CVE 10~15건 (후보 표는 20건 정도 만들고 골라요).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>Ubuntu 24.04(noble)에서 <code>released</code>(수정 패키지가 나옴)인 CVE여야 "패치 대상 → 조치 → 완료" 시나리오가 성립해요. 점수가 고르게 퍼져 있어야 ②의 분포 분석이 의미 있고, 점수 없는 CVE가 1~2개 있어야 NULL 처리를 보여줄 수 있어요.</p>
+      <h3 class="part">③ 방법과 코드</h3>
+      <p><strong>웹에서 보기</strong> (확인한 주소): <code>https://ubuntu.com/security/cves?package=openssh&amp;version=noble&amp;status=released</code> (<code>openssh</code> 자리에 <code>apache2</code>)</p>
+      <p><strong>JSON으로 뽑기</strong> — 같은 조건의 JSON API를 쓰는 1회용 스크립트예요 (레포에 안 남겨도 돼요).</p>
+<pre>"""Ubuntu에서 noble(24.04) 상태가 released인 CVE 후보를 뽑아 본다. (후보 고르기용, 1회성)
+
+실행: python data/list_candidates.py openssh
+      python data/list_candidates.py apache2
+"""
+import sys
+
+import requests
+
+package = sys.argv[1] if len(sys.argv) &gt; 1 else "openssh"
+resp = requests.get(
+    "https://ubuntu.com/security/cves.json",
+    params={"package": package, "version": "noble", "status": "released",
+            "limit": 20, "offset": 0},          # limit은 최대 20. 더 보려면 offset을 20, 40...으로
+    headers={"User-Agent": "vuln-mgmt-student-project"},
+    timeout=60,
+)
+resp.raise_for_status()
+data = resp.json()
+print(f"{package}: 전체 {data['total_results']}건 중 {len(data['cves'])}건")
+print("cve_id\tpriority\tcvss3\tnoble 수정 버전")
+for cve in data["cves"]:
+    fixed = ""
+    for pkg in cve["packages"]:
+        if pkg["name"] != package:
+            continue
+        for st in pkg["statuses"]:
+            if st["release_codename"] == "noble":
+                fixed = st["description"]
+    print(f"{cve['id']}\t{cve['priority']}\t{cve['cvss3']}\t{fixed}")</pre>
+      <p><code>data/cve_list.csv</code> 양식 (<strong>아래 번호는 예시용 가짜</strong> — 실제 번호로 바꾸세요)</p>
+<pre>cve_id,software,source_url,memo
+CVE-0000-0001,apache2,https://ubuntu.com/security/CVE-0000-0001,예시용 가짜 번호 - 실제 번호로 바꾸기
+CVE-0000-0002,openssh,https://ubuntu.com/security/CVE-0000-0002,예시용 가짜 번호 - CVSS 높음 후보
+CVE-0000-0003,openssh,https://ubuntu.com/security/CVE-0000-0003,예시용 가짜 번호 - NVD 점수 없음 확인용</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>열</th><th>규칙</th></tr></thead>
+          <tbody>
+            <tr><td><code>cve_id</code></td><td>대문자 <code>CVE-연도-번호</code> (DB CHECK 제약과 같은 형식)</td></tr>
+            <tr><td><code>software</code></td><td>Ubuntu <strong>소스</strong> 패키지명: <code>apache2</code> 또는 <code>openssh</code></td></tr>
+            <tr><td><code>source_url</code></td><td>사람이 확인한 Ubuntu CVE 페이지 주소</td></tr>
+            <tr><td><code>memo</code></td><td>고른 이유 (점수대, NULL 확인용 등). 쉼표를 쓰면 열이 밀리니 쓰지 않기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/list_candidates.py openssh</pre>
+<pre class="out">openssh: 전체 39건 중 20건
+cve_id	priority	cvss3	noble 수정 버전
+CVE-0000-0001	medium	3.6	1:9.6p1-3ubuntu13.99
+CVE-0000-0002	medium	2.5	1:9.6p1-3ubuntu13.99
+…</pre>
+      <p>(형식만 보여주려고 번호·버전을 가짜로 바꿨어요. 건수는 실행 당시 값이에요.)</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>{"errors": "… 'limit': ['Must be greater than or equal to 1 and less than or equal to 20.'] …"}</td><td>Ubuntu API의 <code>limit</code>은 최대 20</td><td><code>limit=20</code>으로 두고 <code>offset</code>을 20, 40…으로 바꿔 여러 번</td></tr>
+            <tr><td>응답이 1~2분씩 걸림</td><td>Ubuntu API가 느릴 때가 있음</td><td><code>timeout=60</code> 그대로 두고 기다리기. 실패하면 잠시 뒤 재실행</td></tr>
+            <tr><td>noble 상태가 <code>not-affected</code></td><td>24.04 출시 전에 이미 고쳐진 CVE</td><td>시연에 쓸모가 없으니 후보에서 빼기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>후보 표(CVE, 패키지, noble 상태, 수정 버전, USN, CVSS)를 11/23 회의에서 공유 → ①이 스키마로 다 담을 수 있는지 확인해요.</p>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="panel step" id="step-3">
+      <h2><span class="step-no">3</span>collect_cve.py — 원본 수집</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/collect_cve.py</code> → 실행하면 <code>data/raw/nvd/</code>, <code>data/raw/ubuntu/</code>에 CVE마다 JSON 파일 1개씩, 실패 목록 <code>data/raw/failed.csv</code>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <ul>
+        <li><strong>원본을 가공 없이 저장:</strong> 추출 규칙이 바뀌어도 다시 받을 필요 없이 6단계만 다시 돌리면 돼요.</li>
+        <li><strong>요청 간격(sleep)과 재시도:</strong> NVD는 API 키 없이 쓰면 요청 횟수 제한이 있어요. 6초 간격이면 여유 있게 안전해요.</li>
+        <li><strong>이미 받은 파일은 건너뛰기:</strong> 중간에 실패해도 다시 실행하면 실패한 것만 받아요.</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>"""NVD와 Ubuntu에서 CVE 원본 JSON을 받아 data/raw/에 저장한다.
+
+실행: python data/collect_cve.py
+입력: data/cve_list.csv   (cve_id, software, source_url, memo)
+출력: data/raw/nvd/&lt;CVE&gt;.json, data/raw/ubuntu/&lt;CVE&gt;.json, data/raw/failed.csv
+"""
+import csv
+import json
+import time
+from pathlib import Path
+
+import requests
+
+DATA_DIR = Path(__file__).resolve().parent
+RAW_DIR = DATA_DIR / "raw"
+NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+UBUNTU_URL = "https://ubuntu.com/security/cves/{cve_id}.json"
+
+SLEEP_SECONDS = 6        # API 키 없이 NVD를 쓸 때 요청 사이 간격 (넉넉하게)
+MAX_RETRY = 3            # 실패하면 몇 번까지 다시 시도할지
+HEADERS = {"User-Agent": "vuln-mgmt-student-project"}
+
+
+def fetch_json(url, params=None):
+    """URL에서 JSON을 받는다. 실패하면 MAX_RETRY번까지 간격을 늘려 가며 다시 시도한다."""
+    for attempt in range(1, MAX_RETRY + 1):
+        try:
+            resp = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            if resp.status_code == 200:
+                return resp.json()
+            print(f"  HTTP {resp.status_code} (시도 {attempt}/{MAX_RETRY})")
+        except requests.RequestException as e:
+            print(f"  요청 오류: {e} (시도 {attempt}/{MAX_RETRY})")
+        time.sleep(SLEEP_SECONDS * attempt)   # 6초 → 12초 → 18초
+    return None
+
+
+def save_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def collect_one(cve_id):
+    """CVE 1건을 NVD, Ubuntu에서 받아 저장한다. 둘 다 성공하면 True."""
+    ok = True
+
+    nvd_path = RAW_DIR / "nvd" / f"{cve_id}.json"
+    if nvd_path.exists():
+        print("  NVD: 이미 있음, 건너뜀")
+    else:
+        data = fetch_json(NVD_URL, params={"cveId": cve_id})
+        if data and data.get("totalResults", 0) &gt; 0:
+            save_json(nvd_path, data)
+            print("  NVD: 저장")
+        else:
+            print("  NVD: 실패 또는 결과 없음")
+            ok = False
+        time.sleep(SLEEP_SECONDS)
+
+    ubuntu_path = RAW_DIR / "ubuntu" / f"{cve_id}.json"
+    if ubuntu_path.exists():
+        print("  Ubuntu: 이미 있음, 건너뜀")
+    else:
+        data = fetch_json(UBUNTU_URL.format(cve_id=cve_id))
+        if data and data.get("id") == cve_id:
+            save_json(ubuntu_path, data)
+            print("  Ubuntu: 저장")
+        else:
+            print("  Ubuntu: 실패 또는 결과 없음")
+            ok = False
+        time.sleep(1)
+
+    return ok
+
+
+def main():
+    with open(DATA_DIR / "cve_list.csv", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    failed = []
+    for i, row in enumerate(rows, start=1):
+        cve_id = row["cve_id"].strip()
+        print(f"[{i}/{len(rows)}] {cve_id}")
+        if not collect_one(cve_id):
+            failed.append(cve_id)
+
+    # 실패한 CVE는 파일로 남긴다. 다시 실행하면 이미 받은 파일은 건너뛰므로 실패한 것만 재시도된다.
+    with open(RAW_DIR / "failed.csv", "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["cve_id"])
+        for cve_id in failed:
+            writer.writerow([cve_id])
+
+    print(f"완료: 성공 {len(rows) - len(failed)}건, 실패 {len(failed)}건")
+    if failed:
+        print("실패 목록: data/raw/failed.csv")
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>요청</th><th>주소 (실제 요청해서 확인)</th></tr></thead>
+          <tbody>
+            <tr><td>NVD CVE 1건</td><td><code>https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-…</code></td></tr>
+            <tr><td>Ubuntu CVE 1건</td><td><code>https://ubuntu.com/security/cves/CVE-….json</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout warn">확인 필요: NVD의 정확한 요청 제한 수치와 API 키 헤더 이름은 공식 문서 페이지를 자동으로 읽지 못해 확인하지 못했어요. 그래서 이 코드는 API 키 없이 6초 간격으로만 요청해요. API 키를 쓰려면 <a href="https://nvd.nist.gov/developers/start-here" target="_blank" rel="noopener">NVD 개발자 페이지</a>에서 직접 확인하고 쓰세요.</div>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/collect_cve.py</pre>
+<pre class="out">[1/6] CVE-0000-0001
+  NVD: 저장
+  Ubuntu: 저장
+[2/6] CVE-0000-0002
+  NVD: 저장
+  Ubuntu: 저장
+…
+완료: 성공 6건, 실패 0건</pre>
+      <p>(검증 때 실제 CVE 6건으로 약 1분 40초 걸렸어요. 출력의 번호는 가짜로 바꿨어요.) 한 번 더 실행하면 모두 "이미 있음, 건너뜀"이 나와야 해요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td><code>HTTP 4xx</code> 또는 <code>HTTP 5xx</code> (시도 1/3)</td><td>요청이 너무 잦거나 서버 일시 오류 (어떤 코드가 오는지는 확인 필요)</td><td>스크립트가 간격을 늘려 재시도함. 계속되면 <code>SLEEP_SECONDS</code>를 10으로</td></tr>
+            <tr><td>NVD: 실패 또는 결과 없음</td><td>CVE 번호 오타 또는 NVD에 아직 없음</td><td><code>failed.csv</code> 확인 → 번호를 웹에서 검색</td></tr>
+            <tr><td>FileNotFoundError: … cve_list.csv</td><td>파일 위치가 다름</td><td><code>data/cve_list.csv</code>에 두기</td></tr>
+            <tr><td>CSV의 한글 memo가 깨짐 (엑셀로 저장한 경우)</td><td>엑셀이 UTF-8이 아닌 형식으로 저장</td><td>VS Code로 편집하거나 엑셀에서 "CSV UTF-8"로 저장</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p><code>data/raw/</code>는 커밋해요. 그래야 ②·③이 인터넷 없이도 같은 데이터를 적재할 수 있어요.</p>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="panel step" id="step-4">
+      <h2><span class="step-no">4</span>원본 JSON 구조 읽기</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>파일은 없어요. 받은 JSON에서 우리 컬럼에 들어갈 값이 <strong>어느 경로</strong>에 있는지 찾아요. 결과는 5단계의 매핑표가 돼요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>NVD는 CVE의 설명·점수·공개일을, Ubuntu는 릴리스별 패키지 상태·수정 버전·USN·우선순위를 줘요. 한 곳에서 다 받을 수 없어서 두 원본을 합쳐야 하고, 그 "합치는 규칙"이 우리 정형화 작업의 핵심이에요.</p>
+      <h3 class="part">③ 구조 (필드 이름은 실제, 값은 예시용 가짜)</h3>
+      <p><strong>NVD</strong> <code>data/raw/nvd/CVE-0000-0001.json</code></p>
+<pre>{
+  "totalResults": 1,
+  "vulnerabilities": [
+    {
+      "cve": {
+        "id": "CVE-0000-0001",
+        "published": "2026-01-01T13:15:06.467",
+        "descriptions": [
+          {"lang": "en", "value": "(영어 설명)"}
+        ],
+        "metrics": {
+          "cvssMetricV40": [ … 같은 모양 … ],
+          "cvssMetricV31": [
+            {
+              "source": "nvd@nist.gov",
+              "type": "Primary",
+              "cvssData": {
+                "version": "3.1",
+                "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                "baseScore": 9.8,
+                "baseSeverity": "CRITICAL"
+              }
+            },
+            {"source": "(CVE를 등록한 기관)", "type": "Secondary", "cvssData": { … }}
+          ]
+        }
+      }
+    }
+  ]
+}</pre>
+      <p><strong>Ubuntu</strong> <code>data/raw/ubuntu/CVE-0000-0001.json</code></p>
+<pre>{
+  "id": "CVE-0000-0001",
+  "priority": "high",
+  "cvss3": 8.1,
+  "impact": {"baseMetricV3": {"cvssV3": {"baseScore": 8.1, "vectorString": "CVSS:3.1/…", "version": "3.1"}}},
+  "packages": [
+    {
+      "name": "openssh",
+      "statuses": [
+        {"release_codename": "noble", "status": "released", "description": "1:9.6p1-3ubuntu13.99"},
+        {"release_codename": "jammy", "status": "released", "description": "1:8.9p1-3ubuntu0.99"}
+      ]
+    },
+    {"name": "openssh-ssh1", "statuses": [ … ]}
+  ],
+  "notices": [
+    {
+      "id": "USN-0000-1",
+      "release_packages": {
+        "noble": [
+          {"name": "openssh", "is_source": true, "version": "1:9.6p1-3ubuntu13.99"},
+          {"name": "openssh-server", "is_source": false, "version": "1:9.6p1-3ubuntu13.99"}
+        ]
+      }
+    }
+  ]
+}</pre>
+      <ul>
+        <li><strong>수정 버전</strong>은 <code>status</code>가 <code>released</code>일 때 <code>statuses[].description</code>에 들어 있어요. 다른 상태에서는 설명 문장이거나 빈 문자열이에요.</li>
+        <li><strong>USN</strong>은 <code>notices[]</code>에서 <code>release_packages.noble</code> 안의 소스 패키지(<code>is_source: true</code>) 버전이 수정 버전과 같은 공지를 찾아요.</li>
+        <li><strong>status 값</strong>: 실제로 받아 보니 우리 ENUM 5개 외에 <code>DNE</code>(그 릴리스에 패키지 없음), <code>needs-triage</code>(분류 전)도 많이 나와요.</li>
+      </ul>
+      <h3 class="part">④ 확인 방법</h3>
+<pre># 받은 파일에서 noble 상태만 출력해 보기
+python -c "import json; u=json.load(open('data/raw/ubuntu/CVE-0000-0001.json', encoding='utf-8')); print([(p['name'], s['status'], s['description']) for p in u['packages'] for s in p['statuses'] if s['release_codename']=='noble'])"</pre>
+<pre class="out">[('openssh', 'released', '1:9.6p1-3ubuntu13.99'), ('openssh-ssh1', 'ignored', ''), ('openssh-gssapi', 'DNE', '')]</pre>
+      <p>(파일 이름을 내가 받은 실제 CVE 번호로 바꿔서 실행하세요. 출력의 버전은 가짜예요.)</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>KeyError: 'cvssMetricV31'</td><td>그 CVE에 3.1 점수가 없음 (4.0만 있거나 아예 없음)</td><td>대괄호 대신 <code>.get("cvssMetricV31", [])</code></td></tr>
+            <tr><td>점수가 두 개 이상</td><td>NVD(Primary)와 등록 기관(Secondary)이 각각 매김</td><td>5단계 규칙대로 하나를 고르고, 고른 출처를 <code>cvss_source</code>에 기록</td></tr>
+            <tr><td>NVD 점수와 Ubuntu <code>cvss3</code>가 다름</td><td>점수를 매긴 곳이 다름 (검증 중 실제로 3.3 vs 3.6인 CVE가 있었어요)</td><td>어느 쪽을 썼는지 <code>cvss_source</code>로 남기기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>"수집 가능한 필드 목록"을 ①에게 공유해요(11/23). 받은 데이터에 ENUM에 없는 상태값이 있다는 것도 같이 알려요.</p>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="panel step" id="step-5">
+      <h2><span class="step-no">5</span>값 추출 규칙과 data_mapping.md</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>docs/data_mapping.md</code> — 원본 필드 경로 → 테이블.컬럼 → 변환 규칙 → 없을 때 처리.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>이 표가 곧 "정형화"의 설명이에요. 코드(<code>load_db.py</code>)는 이 표를 그대로 구현한 것이어야 하고, 발표에서는 표 한 장으로 "비정형 JSON을 어떻게 관계형 컬럼으로 바꿨는지"를 보여줘요. 값이 없을 때 0이나 빈 문자열이 아니라 <strong>NULL</strong>로 두는 이유는, 0점은 "안전하다"는 뜻으로 오해되기 때문이에요.</p>
+      <h3 class="part">③ 양식</h3>
+<pre># 데이터 매핑 — 원본 JSON → DB
+
+- NVD: services.nvd.nist.gov/rest/json/cves/2.0?cveId=… (data/raw/nvd/)
+- Ubuntu: ubuntu.com/security/cves/….json (data/raw/ubuntu/)
+
+## vulnerabilities
+| 원본 필드 경로 | 테이블.컬럼 | 변환 규칙 | 없을 때 |
+|---|---|---|---|
+| nvd: vulnerabilities[0].cve.id | vulnerabilities.cve_id | 그대로 | (필수) |
+| nvd: cve.descriptions[lang=en].value | description | 영어 설명 1개 | NULL |
+| nvd: cve.published | published_date | "2026-01-01T13:15:06.467" → 2026-01-01 | NULL |
+| nvd: cve.metrics.cvssMetricV31 → V30 → V40 순서, 그 안에서 type=Primary 먼저 | cvss_score / cvss_version / cvss_vector | cvssData.baseScore / .version / .vectorString | ubuntu: impact.baseMetricV3.cvssV3 → 그것도 없으면 NULL |
+| (위에서 고른 것) | cvss_source | Primary → 'NVD', Secondary → 'NVD-secondary', Ubuntu → 'Ubuntu' | NULL |
+| ubuntu: priority | ubuntu_priority | ENUM 5개 중 하나만 | 그 외 값은 NULL |
+| (요청 URL) | source_url | NVD 요청 주소 | - |
+
+## cve_package_status
+| 원본 필드 경로 | 테이블.컬럼 | 변환 규칙 | 없을 때 |
+|---|---|---|---|
+| ubuntu: packages[].name | software_id | apache2 / openssh만, software 테이블에서 ID 조회 | 그 외 패키지는 건너뜀 |
+| ubuntu: packages[].statuses[].release_codename | ubuntu_release | noble → 24.04, jammy → 22.04 | 그 외 릴리스는 건너뜀 |
+| ubuntu: …statuses[].status | status | ENUM 5개만 | DNE, needs-triage 등은 건너뛰고 로그 |
+| ubuntu: …statuses[].description | fixed_version | status = released일 때만 | NULL |
+| ubuntu: notices[].id (release_packages에 같은 소스 버전) | usn_id | 그대로 | NULL |
+
+## 정한 이유
+- CVSS 3.1을 먼저 고른 이유: Ubuntu cvss3과 비교하기 쉽고 대부분의 CVE에 있음 (팀 확정 필요)</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>표의 모든 행이 <code>load_db.py</code>의 코드 한 줄과 1:1로 대응하는지 맞춰 봐요. 6단계 코드의 <code>pick_cvss()</code>, <code>extract_vulnerability()</code>, <code>extract_package_status()</code>가 이 표를 구현한 거예요.</p>
+      <div class="callout warn">확인 필요: <code>cvssMetricV30</code> 키는 받아 본 응답들에 없어서 실제 모양을 확인하지 못했어요. 코드는 다른 버전과 같은 모양이라고 가정하고 <code>.get()</code>으로 안전하게 읽어요. <code>cvssMetricV40</code>, <code>cvssMetricV31</code>은 확인했어요.</div>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>CVSS 선택 순서를 팀원마다 다르게 이해</td><td>규칙이 문서에만 있고 합의 안 됨</td><td>11/23 회의에서 순서를 확정하고 표 아래 "정한 이유"에 기록</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>①</strong>: ENUM에 없는 상태값(<code>needs-triage</code> 등)을 버릴지, ENUM에 추가할지 결정 요청. → <strong>발표</strong>: 이 표 한 장.</p>
+    </section>
+
+    <!-- STEP 6 -->
+    <section class="panel step" id="step-6">
+      <h2><span class="step-no">6</span>load_db.py — DB 적재</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/load_db.py</code> — 원본 JSON에서 값을 뽑아 <code>software → vulnerabilities → cve_package_status</code> 순서로 적재.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <ul>
+        <li><strong>순서:</strong> <code>cve_package_status</code>는 <code>vulnerabilities</code>와 <code>software</code>를 FK로 참조해서, 부모가 먼저 있어야 들어가요.</li>
+        <li><strong>INSERT … ON DUPLICATE KEY UPDATE:</strong> 이미 있는 PK면 값만 갱신해서, 몇 번을 다시 실행해도 중복이 안 생겨요. (<code>AS new</code> 별칭은 MySQL 8.0.19부터 쓰는 방식이에요.)</li>
+        <li><strong>executemany:</strong> 행 목록을 한 번에 넘겨요.</li>
+        <li><strong>트랜잭션:</strong> 세 테이블을 한 번에 commit. 중간에 실패하면 rollback되어 "반만 들어간 상태"가 안 생겨요.</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>"""data/raw/의 원본 JSON에서 값을 뽑아 DB에 적재한다. 여러 번 실행해도 안전하다.
+
+실행: python data/load_db.py
+적재 순서(FK 때문): software → vulnerabilities → cve_package_status
+"""
+import csv
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+
+import pymysql
+from dotenv import load_dotenv
+
+DATA_DIR = Path(__file__).resolve().parent
+RAW_DIR = DATA_DIR / "raw"
+load_dotenv(DATA_DIR.parent / ".env")
+
+NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve_id}"
+UBUNTU_URL = "https://ubuntu.com/security/cves/{cve_id}.json"
+
+# software 테이블에 넣을 값 (source_package → 표시 이름)
+SOFTWARE = {"apache2": "Apache HTTP Server", "openssh": "OpenSSH"}
+
+# Ubuntu 코드명 → 릴리스 번호 (DB에는 번호만 넣는다)
+RELEASES = {"noble": "24.04", "jammy": "22.04"}
+
+# DB의 cve_package_status.status ENUM에 있는 값만 적재한다.
+# Ubuntu JSON에는 DNE(해당 릴리스에 패키지 없음), needs-triage 같은 값도 있는데 건너뛰고 로그를 남긴다.
+ALLOWED_STATUS = {"needed", "released", "not-affected", "deferred", "ignored"}
+ALLOWED_PRIORITY = {"negligible", "low", "medium", "high", "critical"}
+
+# CVSS를 고르는 순서: 3.1 → 3.0 → 4.0. 같은 버전 안에서는 NVD(Primary)를 먼저.
+CVSS_KEYS = ["cvssMetricV31", "cvssMetricV30", "cvssMetricV40"]
+
+
+def connect():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE", "vuln_mgmt"),
+        charset="utf8mb4",
+        autocommit=False,
+    )
+
+
+def load_json(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def pick_cvss(metrics):
+    """NVD metrics에서 CVSS 하나를 고른다. 없으면 None."""
+    for key in CVSS_KEYS:
+        candidates = metrics.get(key, [])
+        if not candidates:
+            continue
+        # Primary(NVD가 직접 매긴 점수)를 먼저, 없으면 첫 번째(Secondary, CNA가 매긴 점수)
+        primary = [m for m in candidates if m.get("type") == "Primary"]
+        chosen = primary[0] if primary else candidates[0]
+        data = chosen.get("cvssData", {})
+        return {
+            "score": data.get("baseScore"),
+            "version": data.get("version"),
+            "vector": data.get("vectorString"),
+            "source": "NVD" if chosen.get("type") == "Primary" else "NVD-secondary",
+        }
+    return None
+
+
+def extract_vulnerability(cve_id):
+    """원본 JSON 2개에서 vulnerabilities 1행을 만든다."""
+    nvd = load_json(RAW_DIR / "nvd" / f"{cve_id}.json")
+    ubuntu = load_json(RAW_DIR / "ubuntu" / f"{cve_id}.json")
+    cve = nvd["vulnerabilities"][0]["cve"]
+
+    # 영어 설명 하나
+    description = None
+    for d in cve.get("descriptions", []):
+        if d.get("lang") == "en":
+            description = d.get("value")
+            break
+
+    # "2024-07-01T13:15:06.467" → date(2024, 7, 1)
+    published = cve.get("published")
+    published_date = datetime.fromisoformat(published).date() if published else None
+
+    cvss = pick_cvss(cve.get("metrics", {}))
+    if cvss is None:
+        # NVD에 점수가 없으면 Ubuntu의 CVSS 3 점수를 쓴다. 그것도 없으면 전부 None(NULL).
+        v3 = (ubuntu.get("impact") or {}).get("baseMetricV3", {}).get("cvssV3", {})
+        if v3.get("baseScore") is not None:
+            cvss = {"score": v3.get("baseScore"), "version": v3.get("version"),
+                    "vector": v3.get("vectorString"), "source": "Ubuntu"}
+        else:
+            cvss = {"score": None, "version": None, "vector": None, "source": None}
+
+    priority = ubuntu.get("priority")
+    if priority not in ALLOWED_PRIORITY:
+        priority = None   # untriaged 등은 NULL
+
+    return (cve_id, description, published_date, cvss["score"], cvss["version"],
+            cvss["vector"], cvss["source"], priority, NVD_URL.format(cve_id=cve_id))
+
+
+def find_usn(ubuntu, codename, package, fixed_version):
+    """수정 버전이 들어 있는 USN 번호를 찾는다. 없으면 None."""
+    for notice in ubuntu.get("notices", []):
+        for pkg in notice.get("release_packages", {}).get(codename, []):
+            if pkg.get("is_source") and pkg.get("name") == package and pkg.get("version") == fixed_version:
+                return notice.get("id")
+    return None
+
+
+def extract_package_status(cve_id, software_ids, skipped):
+    """Ubuntu JSON에서 cve_package_status 행 목록을 만든다."""
+    ubuntu = load_json(RAW_DIR / "ubuntu" / f"{cve_id}.json")
+    rows = []
+    for pkg in ubuntu.get("packages", []):
+        package = pkg.get("name")
+        if package not in software_ids:
+            continue   # openssh-ssh1처럼 우리가 관리하지 않는 패키지
+        for st in pkg.get("statuses", []):
+            codename = st.get("release_codename")
+            if codename not in RELEASES:
+                continue
+            status = st.get("status")
+            if status not in ALLOWED_STATUS:
+                skipped.append((cve_id, package, codename, status))
+                continue
+            fixed_version = st.get("description") if status == "released" else None
+            usn_id = find_usn(ubuntu, codename, package, fixed_version) if fixed_version else None
+            rows.append((cve_id, software_ids[package], RELEASES[codename], status,
+                         fixed_version, usn_id, UBUNTU_URL.format(cve_id=cve_id)))
+    return rows
+
+
+def main():
+    with open(DATA_DIR / "cve_list.csv", encoding="utf-8") as f:
+        cve_ids = [r["cve_id"].strip() for r in csv.DictReader(f)]
+    # 원본 파일이 둘 다 있는 CVE만 적재
+    cve_ids = [c for c in cve_ids
+               if (RAW_DIR / "nvd" / f"{c}.json").exists() and (RAW_DIR / "ubuntu" / f"{c}.json").exists()]
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            # 1) software
+            cur.executemany(
+                "INSERT INTO software (name, source_package) VALUES (%s, %s) AS new "
+                "ON DUPLICATE KEY UPDATE name = new.name",
+                [(name, pkg) for pkg, name in SOFTWARE.items()],
+            )
+            cur.execute("SELECT source_package, software_id FROM software")
+            software_ids = dict(cur.fetchall())
+
+            # 2) vulnerabilities
+            vuln_rows = [extract_vulnerability(c) for c in cve_ids]
+            cur.executemany(
+                """INSERT INTO vulnerabilities
+                     (cve_id, description, published_date, cvss_score, cvss_version,
+                      cvss_vector, cvss_source, ubuntu_priority, source_url)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) AS new
+                   ON DUPLICATE KEY UPDATE
+                     description = new.description, published_date = new.published_date,
+                     cvss_score = new.cvss_score, cvss_version = new.cvss_version,
+                     cvss_vector = new.cvss_vector, cvss_source = new.cvss_source,
+                     ubuntu_priority = new.ubuntu_priority, source_url = new.source_url""",
+                vuln_rows,
+            )
+
+            # 3) cve_package_status
+            skipped = []
+            cps_rows = []
+            for c in cve_ids:
+                cps_rows.extend(extract_package_status(c, software_ids, skipped))
+            cur.executemany(
+                """INSERT INTO cve_package_status
+                     (cve_id, software_id, ubuntu_release, status, fixed_version, usn_id, source_url)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s) AS new
+                   ON DUPLICATE KEY UPDATE
+                     status = new.status, fixed_version = new.fixed_version,
+                     usn_id = new.usn_id, source_url = new.source_url""",
+                cps_rows,
+            )
+        conn.commit()   # 세 테이블을 한 트랜잭션으로: 중간에 실패하면 아무것도 안 들어간다
+        print(f"software {len(software_ids)}건, vulnerabilities {len(vuln_rows)}건, "
+              f"cve_package_status {len(cps_rows)}건 적재")
+        for s in skipped:
+            print("  건너뜀 (ENUM에 없는 상태):", s)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <div class="callout"><strong>적재 전 DB 상태:</strong> ①의 <code>seed.sql</code>에는 가짜 CVE(<code>CVE-0000-…</code>)가 들어 있어요. 실제 데이터와 섞지 않도록, 실제 데이터를 넣을 때는 먼저 스키마만 다시 만들어요 (기존 데이터가 모두 지워져요).
+<pre style="margin-top:10px">docker compose exec db sh -c 'mysql --default-character-set=utf8mb4 -uroot -p"$MYSQL_ROOT_PASSWORD" &lt; /work/db/schema.sql'</pre></div>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/load_db.py
+python data/load_db.py      # 두 번 실행해도 같은 결과여야 함</pre>
+<pre class="out">software 2건, vulnerabilities 6건, cve_package_status 12건 적재
+software 2건, vulnerabilities 6건, cve_package_status 12건 적재</pre>
+<pre>SELECT cve_id, software_id, ubuntu_release, status, fixed_version, usn_id FROM cve_package_status;</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>(1452, 'Cannot add or update a child row: a foreign key constraint fails (… CONSTRAINT `fk_cps_cve` …)')</td><td>vulnerabilities에 없는 CVE의 패키지 상태를 먼저 넣음</td><td>적재 순서 지키기 (코드의 1→2→3)</td></tr>
+            <tr><td>(1062, "Duplicate entry 'OpenSSH' for key 'software.uq_software_name'")</td><td>ON DUPLICATE KEY UPDATE 없이 INSERT를 다시 실행</td><td>코드처럼 <code>… AS new ON DUPLICATE KEY UPDATE …</code></td></tr>
+            <tr><td>(3819, "Check constraint 'chk_vuln_cve_id_format' is violated.")</td><td>소문자 <code>cve-</code>나 공백이 섞인 번호</td><td><code>cve_list.csv</code>의 번호를 대문자로, <code>.strip()</code></td></tr>
+            <tr><td>(1265, "Data truncated for column 'status' …")</td><td>ENUM에 없는 상태값(<code>DNE</code> 등)을 그대로 넣음</td><td><code>ALLOWED_STATUS</code>로 거르기 (코드에 반영됨)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>"건너뜀 (ENUM에 없는 상태)" 로그를 복사해 ①에게 보내요. 적재가 끝나면 8단계 가상 데이터로 이어져요.</p>
+    </section>
+
+    <!-- STEP 7 -->
+    <section class="panel step" id="step-7">
+      <h2><span class="step-no">7</span>원본 vs DB 검증</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/validate_db.py</code>와 <code>docs/data_validation.md</code>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>원본에서 다시 뽑은 값과 DB에 실제로 들어간 값을 컬럼마다 비교해요. "적재했다"가 아니라 "원본과 일치한다"를 보여줘야 데이터 품질의 근거가 돼요. 추출 함수는 <code>load_db.py</code>의 것을 그대로 가져다 써요(같은 규칙으로 비교).</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""원본 JSON에서 다시 뽑은 값과 DB에 들어간 값을 비교한다.
+
+실행: python data/validate_db.py
+출력: CVE별 일치/불일치. 결과를 docs/data_validation.md 표에 옮겨 적는다.
+"""
+import csv
+from decimal import Decimal
+
+from load_db import (DATA_DIR, RAW_DIR, connect, extract_package_status,
+                     extract_vulnerability)
+
+VULN_COLUMNS = ["cve_id", "description", "published_date", "cvss_score", "cvss_version",
+                "cvss_vector", "cvss_source", "ubuntu_priority", "source_url"]
+
+
+def same(a, b):
+    """DB의 Decimal(9.8)과 JSON의 float(9.8)처럼 타입만 다른 경우는 같다고 본다."""
+    if isinstance(a, Decimal) or isinstance(b, Decimal):
+        return a is not None and b is not None and Decimal(str(a)) == Decimal(str(b))
+    return a == b
+
+
+def main():
+    with open(DATA_DIR / "cve_list.csv", encoding="utf-8") as f:
+        cve_ids = [r["cve_id"].strip() for r in csv.DictReader(f)]
+
+    conn = connect()
+    problems = 0
+    with conn.cursor() as cur:
+        cur.execute("SELECT source_package, software_id FROM software")
+        software_ids = dict(cur.fetchall())
+
+        for cve_id in cve_ids:
+            if not (RAW_DIR / "nvd" / f"{cve_id}.json").exists():
+                print(f"{cve_id}: 원본 없음 (수집 실패)")
+                problems += 1
+                continue
+
+            expected = extract_vulnerability(cve_id)
+            cur.execute(f"SELECT {', '.join(VULN_COLUMNS)} FROM vulnerabilities WHERE cve_id = %s", (cve_id,))
+            actual = cur.fetchone()
+            if actual is None:
+                print(f"{cve_id}: DB에 없음")
+                problems += 1
+                continue
+            diffs = [col for col, e, a in zip(VULN_COLUMNS, expected, actual)
+                     if not (e is None and a is None) and not same(e, a)]
+
+            expected_cps = sorted(extract_package_status(cve_id, software_ids, []))
+            cur.execute(
+                "SELECT cve_id, software_id, ubuntu_release, status, fixed_version, usn_id, source_url "
+                "FROM cve_package_status WHERE cve_id = %s ORDER BY software_id, ubuntu_release",
+                (cve_id,))
+            actual_cps = sorted(cur.fetchall())
+            if expected_cps != actual_cps:
+                diffs.append("cve_package_status")
+
+            score = actual[3] if actual[3] is not None else "NULL"
+            print(f"{cve_id}: {'일치' if not diffs else '불일치 ' + str(diffs)}"
+                  f" (cvss {score}, 패키지 상태 {len(actual_cps)}행)")
+            problems += bool(diffs)
+    conn.close()
+    print(f"검사 {len(cve_ids)}건, 문제 {problems}건")
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <p><code>docs/data_validation.md</code> 양식</p>
+<pre># 원본 vs DB 대조 결과
+
+- 실행일: 2026-11-25, 대상: data/cve_list.csv 15건
+- 방법: data/validate_db.py (원본 JSON에서 다시 추출한 값과 DB 값을 컬럼별 비교)
+
+| CVE | vulnerabilities | cve_package_status | CVSS (출처) | 비고 |
+|---|---|---|---|---|
+| CVE-0000-0001 | 일치 | 일치 (2행) | 9.8 (NVD) | |
+| CVE-0000-0002 | 일치 | 일치 (2행) | 7.5 (NVD-secondary) | NVD 자체 점수 없음 |
+| CVE-0000-0003 | 일치 | 일치 (1행) | NULL | 점수 없음 → NULL 유지 확인 |
+
+- 건너뛴 상태값: (load_db.py 로그 붙여넣기)
+- 사람이 직접 웹 페이지와 대조한 CVE: 3건 (번호 기록)</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/validate_db.py</pre>
+<pre class="out">CVE-0000-0001: 일치 (cvss 8.1, 패키지 상태 2행)
+CVE-0000-0002: 일치 (cvss 9.4, 패키지 상태 2행)
+…
+검사 6건, 문제 0건</pre>
+      <p>(검증 때 실제 6건이 모두 일치했어요. 번호는 가짜로 바꿨어요.) 스크립트 검사와 별개로, 3건 정도는 Ubuntu·NVD 웹 페이지를 열어 사람 눈으로도 대조해요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>cvss_score만 계속 "불일치"</td><td>DB는 <code>Decimal('9.8')</code>, JSON은 <code>9.8</code>(float)라 그냥 ==로 비교</td><td>코드의 <code>same()</code>처럼 Decimal로 맞춰 비교</td></tr>
+            <tr><td>ModuleNotFoundError: No module named 'load_db'</td><td>다른 폴더에서 import</td><td>레포 루트에서 <code>python data/validate_db.py</code> (스크립트 폴더가 자동으로 경로에 들어감)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>발표</strong>: 대조 결과 표. 수집·정형화 파트는 "후보 표 → 매핑표 → 적재 → 대조 결과" 순서로 보여주면 돼요.</p>
+    </section>
+
+    <!-- STEP 8 -->
+    <section class="panel step" id="step-8">
+      <h2><span class="step-no">8</span>시연용 가상 데이터 (generate_synthetic.py --mode demo)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/generate_synthetic.py</code> — 가상 서버·설치 패키지·담당자·조치 건·이력을 만드는 스크립트. 이 단계는 <code>--mode demo</code>(서버 6대).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <ul>
+        <li><strong>random.seed 고정:</strong> 누가 몇 번을 돌려도 같은 데이터가 나와서 ②의 검증표와 ③의 화면 숫자가 팀원마다 같아요.</li>
+        <li><strong>시나리오를 의도적으로:</strong> 기한 초과, 완료율 0%·100% 서버, 같은 CVE가 여러 서버에, 담당자 없음, 이력 여러 번 — ②·③이 보여줄 장면을 데이터가 보장해요.</li>
+        <li><strong>설치 버전은 지어내지 않기:</strong> 수집한 실제 수정 버전 문자열 중에서 골라요(가장 오래된 것 = 영향 많음, 최신 = 영향 적음). 그러면 영향 판정(10단계)도 진짜 버전 비교로 돌아가요.</li>
+        <li><strong>상태를 단계별로 UPDATE:</strong> 처음엔 모두 <code>open</code>으로 넣고 <code>in_progress → patched</code>처럼 UPDATE해야 ①의 트리거가 이력을 단계마다 남겨요. 이때도 <code>updated_by</code>를 반드시 같이 넣어요.</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>"""가상 데이터(서버, 설치 패키지, 담당자, 조치 건, 이력)를 만든다.
+
+실행:
+  python data/generate_synthetic.py --mode demo                 # 시연용: 서버 6대, 시나리오 포함
+  python data/generate_synthetic.py --mode bench --servers 3000 # 성능용: 서버 수천 대
+
+전제: load_db.py로 실제 데이터(software, vulnerabilities, cve_package_status)를 먼저 적재해 둔다.
+주의: 실행할 때마다 가상 데이터 테이블 5개를 비우고 다시 만든다. 실제 데이터 테이블은 건드리지 않는다.
+"""
+import argparse
+import os
+import random
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import pymysql
+from debian.debian_support import Version
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+SEED = 42
+RELEASE = "24.04"
+STAFF = [   # 가상 담당자
+    (1, "김보안", "보안팀", "kim.security@example.com"),
+    (2, "이서버", "인프라팀", "lee.infra@example.com"),
+    (3, "박운영", "운영팀", "park.ops@example.com"),
+    (4, "최개발", "개발팀", "choi.dev@example.com"),
+]
+
+
+def connect():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE", "vuln_mgmt"),
+        charset="utf8mb4",
+        autocommit=False,
+    )
+
+
+def load_real_data(cur):
+    """실제 데이터에서 소프트웨어별 CVE 목록과 버전 후보를 읽는다."""
+    cur.execute("SELECT software_id, source_package FROM software")
+    software = dict(cur.fetchall())
+    cur.execute(
+        "SELECT cve_id, software_id, status, fixed_version FROM cve_package_status "
+        "WHERE ubuntu_release = %s AND status IN ('released', 'needed')",
+        (RELEASE,),
+    )
+    cves = {sid: [] for sid in software}
+    versions = {sid: set() for sid in software}
+    for cve_id, sid, status, fixed in cur.fetchall():
+        cves[sid].append((cve_id, status, fixed))
+        if fixed:
+            versions[sid].add(fixed)
+    # 설치 버전은 지어내지 않고, 수집한 실제 수정 버전 중에서 고른다. 오래된 순으로 정렬.
+    versions = {sid: sorted(v, key=Version) for sid, v in versions.items()}
+    for sid, v in versions.items():
+        if not v:
+            raise SystemExit(f"{software[sid]}의 released 데이터가 없어요. load_db.py를 먼저 실행하세요.")
+    return software, cves, versions
+
+
+def is_affected(installed, status, fixed):
+    """설치 버전이 이 CVE의 영향을 받는지. 문자열 비교가 아니라 Debian 버전 비교를 쓴다."""
+    if status == "needed":          # 아직 수정 버전이 없음 → 설치된 버전은 모두 영향
+        return True
+    return Version(installed) &lt; Version(fixed)
+
+
+def reset_synthetic(conn):
+    """가상 데이터 테이블만 비운다. FK 때문에 자식 테이블부터 지운다."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM system_vulnerabilities")   # patch_history는 CASCADE로 같이 지워짐
+        cur.execute("DELETE FROM installed_software")
+        cur.execute("DELETE FROM systems")
+        cur.execute("DELETE FROM staff")
+    conn.commit()
+    with conn.cursor() as cur:
+        for table in ("system_vulnerabilities", "patch_history", "systems", "staff"):
+            cur.execute(f"ALTER TABLE {table} AUTO_INCREMENT = 1")   # 누가 돌려도 같은 ID가 나오게
+
+
+def make_demo(conn, software, cves, versions):
+    rng = random.Random(SEED)
+    sid = {pkg: s for s, pkg in software.items()}      # 'apache2' → software_id
+    old = {s: v[0] for s, v in versions.items()}       # 가장 오래된 버전 → 영향받는 CVE가 많음
+    new = {s: v[-1] for s, v in versions.items()}      # 가장 최신 버전 → released CVE에는 영향 없음
+
+    # (system_id, hostname, environment, {software_id: 설치 버전}, 시나리오)
+    servers = [
+        (1, "web-prod-01", "prod",    {sid["apache2"]: old[sid["apache2"]], sid["openssh"]: old[sid["openssh"]]}, "mixed"),
+        (2, "web-prod-02", "prod",    {sid["apache2"]: old[sid["apache2"]], sid["openssh"]: new[sid["openssh"]]}, "mixed"),
+        (3, "web-stg-01",  "staging", {sid["apache2"]: new[sid["apache2"]], sid["openssh"]: old[sid["openssh"]]}, "mixed"),
+        (4, "db-prod-01",  "prod",    {sid["openssh"]: old[sid["openssh"]]},                                     "all_open"),     # 완료율 0%
+        (5, "dev-01",      "dev",     {sid["openssh"]: old[sid["openssh"]]},                                     "all_patched"),  # 완료율 100%
+        (6, "dev-02",      "dev",     {sid["apache2"]: new[sid["apache2"]], sid["openssh"]: new[sid["openssh"]]}, "mixed"),
+    ]
+    mixed_cycle = ["open", "in_progress", "patched", "risk_accepted", "open", "patched"]
+    today = date.today()
+    now = datetime.now().replace(microsecond=0)
+
+    with conn.cursor() as cur:
+        cur.executemany("INSERT INTO staff (staff_id, name, team, email) VALUES (%s, %s, %s, %s)", STAFF)
+        cur.executemany(
+            "INSERT INTO systems (system_id, hostname, ubuntu_release, environment) VALUES (%s, %s, %s, %s)",
+            [(s[0], s[1], RELEASE, s[2]) for s in servers],
+        )
+        cur.executemany(
+            "INSERT INTO installed_software (system_id, software_id, installed_version) VALUES (%s, %s, %s)",
+            [(s[0], soft, ver) for s in servers for soft, ver in s[3].items()],
+        )
+
+        plans = []   # (sv 행, 최종 상태)
+        n = 0
+        for system_id, hostname, env, installed, scenario in servers:
+            for soft, ver in installed.items():
+                for cve_id, status, fixed in cves[soft]:
+                    if not is_affected(ver, status, fixed):
+                        continue
+                    n += 1
+                    if scenario == "all_open":
+                        final = "open"
+                    elif scenario == "all_patched":
+                        final = "patched"
+                    else:
+                        final = mixed_cycle[n % len(mixed_cycle)]
+                    assignee = None if n % 4 == 0 else STAFF[n % len(STAFF)][0]   # 4건 중 1건은 담당자 없음
+                    detected = now - timedelta(days=rng.randint(10, 40))
+                    due = detected.date() + timedelta(days=rng.choice([7, 14, 30]))
+                    if final == "open" and n % 3 == 0:
+                        due = today - timedelta(days=rng.randint(1, 10))          # 기한 초과 미해결 건
+                    plans.append(((system_id, cve_id, soft, assignee, due, detected), final, assignee))
+
+        # 1) 모두 open으로 등록 (자동 탐지가 등록했다고 보고 updated_by = NULL) → INSERT 트리거가 이력 1건씩
+        sv_ids = []
+        for row, final, assignee in plans:
+            cur.execute(
+                "INSERT INTO system_vulnerabilities "
+                "(system_id, cve_id, software_id, status, assignee_id, due_date, detected_at, updated_by) "
+                "VALUES (%s, %s, %s, 'open', %s, %s, %s, NULL)",
+                row,
+            )
+            sv_ids.append(cur.lastrowid)
+
+        # 2) 최종 상태까지 단계별로 UPDATE → UPDATE 트리거가 단계마다 이력을 남긴다 (updated_by 반드시 함께)
+        for sv_id, (row, final, assignee) in zip(sv_ids, plans):
+            actor = assignee or 1
+            steps = {"open": [], "in_progress": ["in_progress"], "patched": ["in_progress", "patched"],
+                     "risk_accepted": ["risk_accepted"]}[final]
+            for step in steps:
+                if step == "patched":
+                    cur.execute(
+                        "UPDATE system_vulnerabilities SET status = 'patched', patched_at = %s, updated_by = %s "
+                        "WHERE sv_id = %s",
+                        (now - timedelta(days=rng.randint(0, 9)), actor, sv_id),
+                    )
+                else:
+                    cur.execute(
+                        "UPDATE system_vulnerabilities SET status = %s, updated_by = %s WHERE sv_id = %s",
+                        (step, actor, sv_id),
+                    )
+    conn.commit()
+    print(f"demo: 서버 {len(servers)}대, 담당자 {len(STAFF)}명, 조치 건 {len(plans)}건")
+
+
+def make_bench(conn, software, cves, versions, n_servers, batch=1000):
+    rng = random.Random(SEED)
+    now = datetime.now().replace(microsecond=0)
+    statuses = ["open", "in_progress", "patched", "risk_accepted"]
+    old_weights = [3, 2, 90, 5]     # 탐지된 지 60일 넘은 건의 상태 비율(%)
+    new_weights = [50, 25, 25, 0]   # 최근 60일 안에 탐지된 건의 상태 비율(%)
+
+    with conn.cursor() as cur:
+        cur.executemany("INSERT INTO staff (staff_id, name, team, email) VALUES (%s, %s, %s, %s)", STAFF)
+    conn.commit()
+
+    total_sv = 0
+    for start in range(1, n_servers + 1, batch):
+        ids = range(start, min(start + batch, n_servers + 1))
+        systems, installed, sv_rows = [], [], []
+        for system_id in ids:
+            env = rng.choice(["prod", "prod", "staging", "dev"])
+            systems.append((system_id, f"bench-{system_id:05d}", RELEASE, env))
+            for soft in software:
+                ver = rng.choice(versions[soft])
+                installed.append((system_id, soft, ver))
+                for cve_id, status, fixed in cves[soft]:
+                    if not is_affected(ver, status, fixed):
+                        continue
+                    detected = now - timedelta(days=rng.randint(1, 365))
+                    # 실제 운영처럼: 오래된 건은 대부분 끝났고, 최근 60일 안에 탐지된 건이 주로 미해결
+                    weights = old_weights if (now - detected).days &gt; 60 else new_weights
+                    final = rng.choices(statuses, weights)[0]
+                    due = detected.date() + timedelta(days=rng.choice([7, 14, 30, 60]))
+                    patched_at = detected + timedelta(days=rng.randint(1, 30)) if final == "patched" else None
+                    assignee = rng.choice([None, 1, 2, 3, 4])
+                    sv_rows.append((system_id, cve_id, soft, final, assignee, due, detected, patched_at))
+        with conn.cursor() as cur:
+            # executemany + 단순 INSERT ... VALUES → PyMySQL이 여러 행 INSERT 한 문장으로 묶어서 보낸다 (빠름)
+            cur.executemany(
+                "INSERT INTO systems (system_id, hostname, ubuntu_release, environment) VALUES (%s, %s, %s, %s)",
+                systems)
+            cur.executemany(
+                "INSERT INTO installed_software (system_id, software_id, installed_version) VALUES (%s, %s, %s)",
+                installed)
+            cur.executemany(
+                "INSERT INTO system_vulnerabilities "
+                "(system_id, cve_id, software_id, status, assignee_id, due_date, detected_at, patched_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                sv_rows)
+        conn.commit()   # 배치마다 커밋: 중간에 멈춰도 앞부분은 남고, 트랜잭션이 너무 커지지 않는다
+        total_sv += len(sv_rows)
+        print(f"  서버 {ids[-1]}/{n_servers}대 적재")
+    print(f"bench: 서버 {n_servers}대, 조치 건 {total_sv}건")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="가상 데이터 생성")
+    parser.add_argument("--mode", choices=["demo", "bench"], required=True)
+    parser.add_argument("--servers", type=int, default=3000, help="bench 모드 서버 수")
+    args = parser.parse_args()
+
+    random.seed(SEED)
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            software, cves, versions = load_real_data(cur)
+        reset_synthetic(conn)
+        if args.mode == "demo":
+            make_demo(conn, software, cves, versions)
+        else:
+            make_bench(conn, software, cves, versions, args.servers)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/generate_synthetic.py --mode demo</pre>
+<pre class="out">demo: 서버 6대, 담당자 4명, 조치 건 12건</pre>
+<pre>SELECT hostname, total_count, patched_count, unresolved_count, patch_rate_pct FROM v_system_patch_rate;
+SELECT COUNT(*) AS overdue FROM v_open_risks WHERE is_overdue = 1;
+SELECT cve_id, COUNT(*) AS servers FROM system_vulnerabilities GROUP BY cve_id HAVING COUNT(*) &gt; 1;</pre>
+<pre class="out">hostname    | total_count | patched_count | unresolved_count | patch_rate_pct
+web-prod-01 |           4 |             1 |                2 |           25.0
+web-prod-02 |           2 |             1 |                1 |           50.0
+web-stg-01  |           2 |             1 |                1 |           50.0
+db-prod-01  |           2 |             0 |                2 |            0.0
+dev-01      |           2 |             2 |                0 |          100.0
+dev-02      |           0 |             0 |                0 |           NULL
+
+overdue
+4</pre>
+      <p>(실제 CVE 6건으로 검증한 결과예요. 우리 CVE 목록에 따라 건수는 달라지지만, 0%·100%·기한 초과·담당자 없음·이력 3건 이상인 건이 모두 나오는 건 같아요.)</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>Apache HTTP Server의 released 데이터가 없어요 …</td><td>6단계 적재 전에 실행</td><td><code>load_db.py</code> 먼저</td></tr>
+            <tr><td>(1452, … CONSTRAINT `fk_sv_installed_software` …)</td><td>설치하지 않은 소프트웨어의 취약점을 등록하려 함</td><td>조치 건은 그 서버의 <code>installed</code>에 있는 소프트웨어로만 (코드가 그렇게 만듦)</td></tr>
+            <tr><td>(3819, "Check constraint 'chk_sv_patched_has_patched_at' is violated.")</td><td><code>patched</code>로 바꾸면서 <code>patched_at</code> 누락</td><td>같은 UPDATE에서 <code>patched_at</code> 지정</td></tr>
+            <tr><td>실행할 때마다 sv_id가 달라짐</td><td>AUTO_INCREMENT가 이어서 증가</td><td>코드의 <code>reset_synthetic()</code>처럼 비운 뒤 <code>AUTO_INCREMENT = 1</code></td></tr>
+            <tr><td>이력의 changed_at이 모두 같은 시각</td><td>트리거가 <code>NOW()</code>로 기록하고 스크립트가 한 번에 실행됨</td><td>정상이에요. 시연용 이력은 "순서"만 의미 있어요</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>③</strong>: 시연 시나리오(어느 서버가 0%, 어느 건이 기한 초과인지)를 표로 정리해서 전달. → <strong>문서</strong>: 가상 데이터 생성 규칙(위 ② 목록과 서버 표)을 <code>docs/data_mapping.md</code> 아래에 "가상 데이터" 절로 추가.</p>
+    </section>
+
+    <!-- STEP 9 -->
+    <section class="panel step" id="step-9">
+      <h2><span class="step-no">9</span>성능용 대량 데이터 (--mode bench)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>같은 스크립트의 <code>--mode bench</code>로 서버 수천~수만 대 데이터.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>②가 인덱스 효과를 재려면 수만 행이 필요해요. 한 행씩 INSERT하면 느려서, 1000대씩 묶어 <code>executemany</code>로 보내요(PyMySQL이 여러 행 INSERT 한 문장으로 바꿔 줘요). 상태 비율은 실제 운영처럼 "오래된 건은 대부분 완료, 최근 건이 주로 미해결"로 만들어요. 그래야 "미해결만 찾는" 쿼리에서 인덱스가 의미 있어져요.</p>
+      <h3 class="part">③ 명령어</h3>
+<pre># 실제 데이터 적재(6단계)가 끝난 DB에서
+python data/generate_synthetic.py --mode bench --servers 20000
+
+# 시연용으로 되돌리기
+python data/generate_synthetic.py --mode demo</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre class="out">  서버 1000/20000대 적재
+  서버 2000/20000대 적재
+…
+  서버 20000/20000대 적재
+bench: 서버 20000대, 조치 건 40124건</pre>
+      <p>(실제 CVE 6건 기준, 검증 PC에서 약 4초. CVE가 15건이면 조치 건이 더 많아져요.)</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>bench 후 ③의 화면이 느리거나 표가 너무 김</td><td>DB에 대량 데이터가 남아 있음</td><td>성능 측정이 끝나면 <code>--mode demo</code>로 되돌리기</td></tr>
+            <tr><td>MemoryError / 매우 느림</td><td><code>--servers</code>를 너무 크게</td><td>20000 정도로 시작해서 ②와 필요한 크기를 맞추기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>②</strong>: 데이터 파일을 넘기는 게 아니라 <strong>명령어를 넘겨요</strong>. ②가 자기 DB에서 6단계 → 이 명령을 그대로 실행하면 같은 데이터가 생겨요 (seed 고정). 사용한 <code>--servers</code> 값을 같이 알려 주세요.</p>
+    </section>
+
+    <!-- STEP 10 -->
+    <section class="panel step" id="step-10">
+      <h2><span class="step-no">10</span>영향 판정과 버전 비교</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>"이 서버의 설치 버전이 이 CVE에 영향을 받는가?"를 판정하는 규칙. <code>generate_synthetic.py</code>의 <code>is_affected()</code>가 이 규칙이에요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <ul>
+        <li><strong>바이너리 ↔ 소스 패키지:</strong> 서버에 설치되는 건 <code>openssh-server</code>, <code>openssh-client</code> 같은 <strong>바이너리</strong> 패키지예요. Ubuntu CVE 상태는 <strong>소스</strong> 패키지 <code>openssh</code> 기준이에요. 그래서 <code>software.source_package</code>에는 소스 이름을 넣고, 설치 정보를 넣을 때 바이너리 → 소스로 바꿔요. USN의 <code>release_packages</code>에서 <code>is_source: false</code>인 항목들이 그 소스에서 나온 바이너리 목록이에요. Apache는 바이너리와 소스 이름이 둘 다 <code>apache2</code>예요.</li>
+        <li><strong>문자열 비교 금지:</strong> Debian 버전은 <code>에포크:업스트림-데비안리비전</code> 형식이라 글자 순서로 비교하면 틀려요. <code>python-debian</code>의 <code>Version</code>으로 비교해요. 그래서 DB에서는 버전 크기를 비교하지 않아요 (<code>docs/db_dictionary.md</code> 규칙).</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>from debian.debian_support import Version
+
+# 예시용 버전 문자열 (실제 수정 버전 아님)
+pairs = [
+    ("2.4.58-1ubuntu8.9", "2.4.58-1ubuntu8.10"),   # 8.9 &lt; 8.10 이어야 함
+    ("1:9.6p1-3ubuntu13.5", "9.7p1-1"),            # 앞의 "1:"(epoch)가 있으면 항상 더 큼
+    ("2.4.58-1ubuntu8", "2.4.58-1ubuntu8.1"),
+]
+for installed, fixed in pairs:
+    print(f"{installed:22} &lt; {fixed:20} | 문자열: {str(installed &lt; fixed):5} | Version: {Version(installed) &lt; Version(fixed)}")</pre>
+<pre># 영향 판정 규칙 (generate_synthetic.py의 is_affected)
+#   status = needed   → 수정 버전이 아직 없음 → 영향 있음
+#   status = released → Version(설치 버전) &lt; Version(수정 버전) 이면 영향 있음
+#   그 외 상태        → 조치 건을 만들지 않음</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python data/version_demo.py</pre>
+<pre class="out">2.4.58-1ubuntu8.9      &lt; 2.4.58-1ubuntu8.10   | 문자열: False | Version: True
+1:9.6p1-3ubuntu13.5    &lt; 9.7p1-1              | 문자열: True  | Version: False
+2.4.58-1ubuntu8        &lt; 2.4.58-1ubuntu8.1    | 문자열: True  | Version: True</pre>
+      <p>첫 줄: 문자열로는 <code>8.9</code>가 <code>8.10</code>보다 크다고 나와요(틀림). 둘째 줄: 앞의 <code>1:</code>(에포크)가 있으면 항상 더 큰 버전인데 문자열 비교는 반대로 나와요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>최신 서버도 영향 있다고 나옴</td><td>버전을 문자열로 비교</td><td><code>Version(a) &lt; Version(b)</code></td></tr>
+            <tr><td><code>openssh-server</code>로 software를 찾으니 없음</td><td>바이너리 이름으로 조회</td><td>소스 이름(<code>openssh</code>)으로 바꿔서 조회</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>발표</strong>: 위 세 줄 출력이 "왜 Python에서 판정하는가"의 근거 슬라이드가 돼요. → <strong>②</strong>: DB에서 버전을 비교하는 쿼리는 만들지 않도록 알려 주세요.</p>
+    </section>
+
+    <!-- STEP 11 -->
+    <section class="panel step" id="step-11">
+      <h2><span class="step-no">11</span>(선택) dpkg-query 출력 적재</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>data/load_dpkg.py</code> — 실제 Ubuntu(VM 또는 WSL)에서 뽑은 설치 버전을 가상 서버 하나의 <code>installed_software</code>에 넣기.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>가상 데이터 중 하나라도 "진짜 서버에서 수집한 버전"이면 발표에서 "실제 운영에서는 이렇게 모은다"를 보여줄 수 있어요. <code>${source:Package}</code> 필드가 바이너리 → 소스 매핑을 대신 해 줘요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre># Ubuntu에서 (패키지 이름은 확인하고 싶은 것만)
+dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${source:Package}\t${Version}\n' \
+  openssh-server openssh-client apache2 &gt; dpkg_web-prod-01.tsv</pre>
+<pre>"""(선택) Ubuntu 서버의 dpkg-query 출력을 installed_software에 적재한다.
+
+서버에서 먼저 실행:
+  dpkg-query -W -f='${db:Status-Abbrev}\t${Package}\t${source:Package}\t${Version}\n' \
+    openssh-server openssh-client apache2 &gt; dpkg_web-prod-01.tsv
+그다음:
+  python data/load_dpkg.py --hostname web-prod-01 --file data/dpkg_web-prod-01.tsv
+"""
+import argparse
+
+from load_db import connect
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--hostname", required=True)
+    parser.add_argument("--file", required=True)
+    args = parser.parse_args()
+
+    found = {}   # source_package → 설치 버전
+    with open(args.file, encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) != 4:
+                continue
+            status, package, source, version = parts
+            if status.strip() != "ii":      # ii = 정상 설치됨. un(설치 안 됨) 등은 건너뜀
+                continue
+            # 바이너리 패키지(openssh-server, openssh-client)는 같은 소스 패키지(openssh)에서 나온다.
+            # 같은 소스에서 나온 바이너리는 버전이 같으므로 하나만 남긴다.
+            found[source] = version
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT system_id FROM systems WHERE hostname = %s", (args.hostname,))
+            row = cur.fetchone()
+            if row is None:
+                raise SystemExit(f"systems에 {args.hostname}가 없어요.")
+            system_id = row[0]
+            cur.execute("SELECT source_package, software_id FROM software")
+            software_ids = dict(cur.fetchall())
+
+            for source, version in found.items():
+                if source not in software_ids:
+                    continue
+                # 이미 있으면 버전만 UPDATE (DELETE 후 INSERT 하면 조치 건의 복합 FK 때문에 실패)
+                cur.execute(
+                    "INSERT INTO installed_software (system_id, software_id, installed_version, collected_at) "
+                    "VALUES (%s, %s, %s, NOW()) AS new "
+                    "ON DUPLICATE KEY UPDATE installed_version = new.installed_version, collected_at = NOW()",
+                    (system_id, software_ids[source], version),
+                )
+                print(f"{args.hostname}: {source} = {version}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>검증 때 쓴 Ubuntu 24.04(WSL)의 실제 출력 형식이에요 (<code>ii</code> = 설치됨, <code>un</code> = 설치 안 됨):</p>
+<pre class="out">un 	apache2	apache2
+ii 	openssh-client	openssh	1:9.6p1-3ubuntu13.99
+un 	openssh-server	openssh-server</pre>
+<pre>python data/load_dpkg.py --hostname web-prod-01 --file data/dpkg_web-prod-01.tsv</pre>
+<pre class="out">web-prod-01: openssh = 1:9.6p1-3ubuntu13.99</pre>
+      <p>(버전은 가짜로 바꿨어요.)</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>아무것도 적재되지 않음</td><td>상태 칸이 <code>"ii "</code>처럼 뒤에 공백이 있음</td><td><code>status.strip() != "ii"</code> (코드에 반영됨)</td></tr>
+            <tr><td>설치 안 된 패키지의 소스 이름이 바이너리 이름과 같게 나옴</td><td>설치 정보가 없으면 dpkg가 소스를 모름</td><td><code>ii</code>인 줄만 쓰기</td></tr>
+            <tr><td>(1451, 'Cannot delete or update a parent row …')</td><td>버전을 바꾸려고 DELETE 후 INSERT</td><td>조치 건이 걸려 있으면 삭제가 막혀요. UPDATE(코드의 ON DUPLICATE KEY UPDATE)로 바꾸기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>①</strong>: 실제 수집한 서버가 어느 것인지 알려 주고, <code>installed_software</code>가 바뀌었으니 영향 판정을 다시 해야 하는지 상의해요.</p>
+    </section>
+
+    <footer>
+      <p><a href="./">← ④ 역할 페이지</a> · <a href="#files">↑ 목차</a></p>
+      <p>막히면 단톡에 에러 메시지 전체를 복사해서 공유</p>
+    </footer>
+  </main>
+  <script src="../../assets/site.js"></script>
+</body>
+</html>

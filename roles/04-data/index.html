@@ -24,6 +24,7 @@
     <p class="eyebrow">04 · 담당 [이름]</p>
     <h1>데이터 수집·정리</h1>
     <p class="intro">교수님 기준 2번이 통째로 "데이터를 어디서 모아서 어떻게 정리해 넣었는가"예요. 그래서 수집 과정과 정리 과정 자체가 발표 내용이 됩니다.</p>
+    <a class="guide-link" href="guide.html">구현 가이드: 처음부터 완성까지 따라 하기 →</a>
 
     <p class="section-label">WHY · 왜 중요한가</p>
     <div class="callout">채점 기준 <strong>2(수집·정형화)</strong>를 책임지고, ②의 성능 분석에 쓸 <strong>대량 가상 데이터</strong>도 만듭니다.</div>
@@ -31,17 +32,17 @@
     <p class="section-label">TODO · 할 일 (체크하면 이 브라우저에 저장돼요)</p>
     <section class="panel">
       <ul class="checklist" data-key="04-data">
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> CVE 후보 20개 표로 정리: CVE, 패키지, noble 상태, 수정 버전, USN, CVSS</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/22</span> NVD JSON, Ubuntu CVE JSON 샘플 1건씩 받아 구조 확인</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의에서 수집 가능한 필드 목록 공유 → 스키마 확인</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/23</span> <code>collect_cve.py</code>: 원본 JSON을 <code>data/raw/</code>에 저장</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/24</span> <code>docs/data_mapping.md</code>: 원본 필드 → 테이블·컬럼 매핑표</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/25</span> <code>load_db.py</code>: 중복 없이 적재 + 원본과 DB 값 대조</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/26</span> <code>generate_synthetic.py</code> 시연용: 서버 5~6대, 시나리오 포함</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/27</span> 같은 스크립트로 성능용: 서버 수천 대 → ②에게 전달</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/27</span> 가상 데이터 생성 규칙 문서화</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">선택</span> Ubuntu VM의 <code>dpkg-query</code> 출력을 <code>installed_software</code>로 적재</span></label></li>
-          <li><label><input type="checkbox"><span><span class="when">11/28~</span> 발표: 데이터 수집·정형화 파트</span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> CVE 후보 20개 표로 정리: CVE, 패키지, noble 상태, 수정 버전, USN, CVSS <a class="step-link" href="guide.html#step-2">가이드 2단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/22</span> NVD JSON, Ubuntu CVE JSON 샘플 1건씩 받아 구조 확인 <a class="step-link" href="guide.html#step-4">가이드 4단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> 회의에서 수집 가능한 필드 목록 공유 → 스키마 확인 <a class="step-link" href="guide.html#step-5">가이드 5단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/23</span> <code>collect_cve.py</code>: 원본 JSON을 <code>data/raw/</code>에 저장 <a class="step-link" href="guide.html#step-3">가이드 3단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/24</span> <code>docs/data_mapping.md</code>: 원본 필드 → 테이블·컬럼 매핑표 <a class="step-link" href="guide.html#step-5">가이드 5단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/25</span> <code>load_db.py</code>: 중복 없이 적재 + 원본과 DB 값 대조 <a class="step-link" href="guide.html#step-6">가이드 6단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/26</span> <code>generate_synthetic.py</code> 시연용: 서버 5~6대, 시나리오 포함 <a class="step-link" href="guide.html#step-8">가이드 8단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> 같은 스크립트로 성능용: 서버 수천 대 → ②에게 전달 <a class="step-link" href="guide.html#step-9">가이드 9단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/27</span> 가상 데이터 생성 규칙 문서화 <a class="step-link" href="guide.html#step-8">가이드 8단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">선택</span> Ubuntu VM의 <code>dpkg-query</code> 출력을 <code>installed_software</code>로 적재 <a class="step-link" href="guide.html#step-11">가이드 11단계 →</a></span></label></li>
+          <li><label><input type="checkbox"><span><span class="when">11/28~</span> 발표: 데이터 수집·정형화 파트 <a class="step-link" href="guide.html#step-7">가이드 7단계 →</a></span></label></li>
       </ul>
       <p class="progress"></p>
     </section>

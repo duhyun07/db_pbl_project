@@ -1,0 +1,818 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 03 Python 구현 가이드</title>
+  <link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="sub" data-role="03-app">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../../guide/">공통</a>
+        <a href="../../github/">GitHub</a>
+        <a href="../01-db/">① DB</a>
+        <a href="../02-sql/">② SQL</a>
+        <a href="../03-app/" aria-current="page">③ Python</a>
+        <a href="../04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">03 · 구현 가이드</p>
+    <h1>Python 프로그램 구현 가이드</h1>
+    <p class="intro">Python 문법은 수업에서 배운 걸로 충분해요. 이 페이지는 <strong>어떤 파일을, 어떤 순서로, 어떤 코드로</strong> 만들어서 DB·SQL 결과를 화면으로 보여주는지 처음부터 완성까지 따라가는 안내서예요. <a href="./">← 역할 페이지로</a></p>
+
+    <div class="callout warn" style="margin-top:20px">화면 예시에 나오는 CVE(<code>CVE-0000-xxxx</code>), 서버, 담당자는 ①의 <code>db/seed.sql</code>에 있는 <strong>예시용 가짜 데이터</strong>예요. 이 페이지의 코드는 모두 seed 데이터가 든 MySQL 8.0.46에서 실제로 실행해 확인했어요 (2026-11-22).</div>
+
+    <p class="section-label">CONTENTS · 목차</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>단계</h2>
+        <ol class="toc">
+          <li><a href="#step-1">프로젝트 구조</a></li>
+          <li><a href="#step-2">가상환경과 패키지</a></li>
+          <li><a href="#step-3">app/db.py — DB 연결</a></li>
+          <li><a href="#step-4">app/queries.py — catalog 실행</a></li>
+          <li><a href="#step-5">대시보드 화면</a></li>
+          <li><a href="#step-6">검색 화면</a></li>
+          <li><a href="#step-7">패치 관리 화면 (트랜잭션)</a></li>
+          <li><a href="#step-8">분석 화면</a></li>
+          <li><a href="#step-9">캐싱·실행·디버깅</a></li>
+          <li><a href="#step-10">통합 체크리스트와 실행 가이드</a></li>
+          <li><a href="#step-11">(11/28 이후) LLM 구조</a></li>
+        </ol>
+      </div>
+      <div class="panel" id="files">
+        <h2>이 가이드를 끝내면 만들어지는 파일</h2>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><td><code>requirements.txt</code></td><td>패키지와 버전</td></tr>
+              <tr><td><code>app/db.py</code></td><td>DB 연결·조회·실행 함수</td></tr>
+              <tr><td><code>app/queries.py</code></td><td>②의 catalog를 id로 실행</td></tr>
+              <tr><td><code>app/main.py</code></td><td>대시보드 (첫 화면)</td></tr>
+              <tr><td><code>app/pages/1_search.py</code></td><td>검색</td></tr>
+              <tr><td><code>app/pages/2_patch.py</code></td><td>패치 상태 변경 + 이력</td></tr>
+              <tr><td><code>app/pages/3_analysis.py</code></td><td>분석 쿼리 표·차트</td></tr>
+              <tr><td><code>app/README.md</code></td><td>실행 가이드</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <p class="section-label">STEPS · 단계별 구현</p>
+
+    <!-- STEP 1 -->
+    <section class="panel step" id="step-1">
+      <h2><span class="step-no">1</span>프로젝트 구조</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>app/</code> 폴더와 <code>app/pages/</code> 폴더, 그리고 아래 구조의 빈 파일들.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>DB에 접속하는 코드를 <code>db.py</code> 한 곳에 모으면 화면 파일에는 "어떤 쿼리를 어떤 값으로"만 남아요. 그래서 SQL Injection 방지(파라미터 바인딩)와 트랜잭션 처리를 한 곳에서 지킬 수 있고, 발표 때도 "DB 접근은 이 파일 하나"라고 설명할 수 있어요. Streamlit은 <code>main.py</code> 옆의 <code>pages/</code> 폴더 파일을 자동으로 왼쪽 메뉴의 페이지로 만들어 줘요.</p>
+      <h3 class="part">③ 구조</h3>
+<pre>vuln-mgmt/
+├── .env                    ← 접속 정보 (커밋 금지, ①이 준 .env.example 복사)
+├── requirements.txt        ← 2단계
+├── sql/
+│   └── query_catalog.json  ← ②가 만듦. 4단계에서 읽기만 함
+└── app/
+    ├── db.py               ← 3단계: 연결, fetch_df(), execute()
+    ├── queries.py          ← 4단계: catalog의 쿼리를 id로 실행
+    ├── main.py             ← 5단계: 대시보드 (streamlit run의 시작 파일)
+    ├── README.md           ← 10단계: 실행 가이드
+    └── pages/
+        ├── 1_search.py     ← 6단계: 검색
+        ├── 2_patch.py      ← 7단계: 패치 관리
+        └── 3_analysis.py   ← 8단계: 분석</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre># 레포 루트에서 (Windows PowerShell)
+mkdir app\pages
+# macOS·Linux
+mkdir -p app/pages</pre>
+      <p>파일 이름 앞의 숫자(<code>1_</code>, <code>2_</code>)가 메뉴 순서가 돼요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>왼쪽 메뉴에 페이지가 안 보임</td><td><code>pages</code> 폴더가 <code>main.py</code>와 다른 위치</td><td><code>app/pages/</code>에 두고 <code>streamlit run app/main.py</code>로 실행</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>구조가 바뀌면 <code>app/README.md</code>에 반영해요. 다른 팀원은 이 README만 보고 앱을 띄워요.</p>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="panel step" id="step-2">
+      <h2><span class="step-no">2</span>가상환경과 패키지</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>requirements.txt</code>(레포 루트)와 <code>.venv/</code> 가상환경(커밋 안 함, <code>.gitignore</code>에 이미 있음).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>버전을 고정해야 팀원 4명 PC와 발표 PC에서 똑같이 돌아가요. <code>cryptography</code>는 MySQL 8의 기본 로그인 방식에 필요해서 같이 넣어요.</p>
+      <h3 class="part">③ 코드 / 명령어</h3>
+      <p><code>requirements.txt</code></p>
+<pre>streamlit==1.67.0
+pymysql==1.2.4
+cryptography==50.0.2
+python-dotenv==1.2.4
+pandas==3.1.1</pre>
+<pre># Windows PowerShell (레포 루트에서)
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# macOS·Linux
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt</pre>
+      <p><code>.env</code>는 ①의 <code>.env.example</code>을 복사한 그대로 써요. 코드는 <code>MYSQL_USER</code>, <code>MYSQL_PASSWORD</code>, <code>MYSQL_DATABASE</code>, <code>MYSQL_PORT</code>를 읽고, 호스트는 <code>127.0.0.1</code>을 기본으로 써요.</p>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python -c "import streamlit, pymysql, pandas, dotenv; print(streamlit.__version__, pandas.__version__)"</pre>
+<pre class="out">1.67.0 3.1.1</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>이 시스템에서 스크립트를 실행할 수 없으므로 … Activate.ps1 파일을 로드할 수 없습니다</td><td>PowerShell 실행 정책</td><td><code>Set-ExecutionPolicy -Scope CurrentUser RemoteSigned</code> 한 번 실행 후 다시 Activate</td></tr>
+            <tr><td>ModuleNotFoundError: No module named 'pymysql'</td><td>가상환경을 켜지 않았거나 설치 전</td><td>프롬프트 앞에 <code>(.venv)</code>가 보이는지 확인 → <code>pip install -r requirements.txt</code></td></tr>
+            <tr><td><code>python</code> 명령을 찾을 수 없다는 메시지, 또는 Microsoft Store가 열림</td><td>Python 설치 때 PATH 미등록</td><td>Python 재설치 시 "Add python.exe to PATH" 체크</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>패키지를 추가하면 <code>requirements.txt</code>에 <code>==버전</code>까지 적고 단톡에 알려요. 팀원은 <code>pip install -r requirements.txt</code>만 다시 하면 돼요.</p>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="panel step" id="step-3">
+      <h2><span class="step-no">3</span>app/db.py — DB 연결</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>app/db.py</code> — 연결 함수 <code>get_connection()</code>, 조회 함수 <code>fetch_df()</code>(결과를 DataFrame으로), 실행 함수 <code>execute()</code>(commit/rollback).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>모든 SQL은 <code>cursor.execute(sql, params)</code>처럼 <strong>값을 따로 넘기는 방식(파라미터 바인딩)</strong>으로만 실행해요. <code>"WHERE cve_id = '" + 입력값 + "'"</code>처럼 이어 붙이면, 입력값에 <code>' OR 1=1 --</code>를 넣는 것만으로 조건이 무력화돼 모든 행이 보이거나 데이터가 바뀌어요(SQL Injection). 바인딩을 쓰면 PyMySQL이 값을 따옴표로 감싸 "그냥 문자열"로만 넣어요. 보안학과 발표라 꼭 질문이 나오는 부분이에요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""DB 연결과 쿼리 실행을 한곳에 모은 모듈. 화면 코드는 이 파일의 함수만 쓴다."""
+import os
+from pathlib import Path
+
+import pandas as pd
+import pymysql
+from dotenv import load_dotenv
+
+# 레포 루트의 .env를 읽는다 (app/db.py 기준 한 단계 위 폴더)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+
+def get_connection():
+    """새 DB 연결을 만든다. autocommit=False라서 변경은 commit()해야 반영된다."""
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE", "vuln_mgmt"),
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,   # 결과 행을 {"컬럼명": 값} 형태로 받는다
+        autocommit=False,
+    )
+
+
+def fetch_df(sql, params=None):
+    """SELECT 결과를 pandas DataFrame으로 돌려준다.
+
+    params에는 %s 자리에 들어갈 값을 튜플이나 리스트로 넘긴다.
+    값은 PyMySQL이 따옴표 처리(escape)를 해서 넣어 주므로 SQL Injection이 생기지 않는다.
+    """
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            columns = [c[0] for c in cur.description]
+        return pd.DataFrame(rows, columns=columns)
+    finally:
+        conn.close()
+
+
+def execute(sql, params=None):
+    """INSERT/UPDATE/DELETE 한 문장을 실행하고 commit한다. 영향받은 행 수를 돌려준다."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            affected = cur.execute(sql, params)
+        conn.commit()
+        return affected
+    except Exception:
+        conn.rollback()   # 실패하면 이 연결에서 한 변경을 모두 취소
+        raise
+    finally:
+        conn.close()</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>cd app
+python -c "from db import fetch_df; print(fetch_df('SELECT COUNT(*) AS n FROM system_vulnerabilities'))"</pre>
+<pre class="out">   n
+0  9</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>pymysql.err.OperationalError: (2003, "Can't connect to MySQL server on '127.0.0.1' …")</td><td>DB 컨테이너가 꺼져 있음 / 포트가 다름</td><td><code>docker compose up -d</code>, <code>docker compose ps</code>로 Up 확인. <code>.env</code>의 <code>MYSQL_PORT</code> 확인</td></tr>
+            <tr><td>pymysql.err.OperationalError: (1045, "Access denied for user 'vuln_app'@'…' (using password: YES)")</td><td>비밀번호 불일치</td><td><code>.env</code> 값 확인. 컨테이너를 만든 뒤 <code>.env</code>를 바꿨다면 <code>docker compose down -v</code> 후 다시 <code>up -d</code></td></tr>
+            <tr><td>pymysql.err.OperationalError: (1045, "Access denied for user '(내 PC 로그인 이름)'@'…' (using password: NO)")</td><td><code>.env</code>를 못 읽어서 사용자/비밀번호가 비어 있음 → PyMySQL이 PC 로그인 이름으로 접속 시도</td><td><code>.env</code>가 레포 루트에 있는지 확인 (<code>app/</code> 안이 아님)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>화면 파일은 모두 이 세 함수만 써요. 연결 정보가 바뀌어도 이 파일과 <code>.env</code>만 고치면 돼요.</p>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="panel step" id="step-4">
+      <h2><span class="step-no">4</span>app/queries.py — catalog 실행</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>app/queries.py</code> — ②의 <code>sql/query_catalog.json</code>을 읽고 <code>run_query("id", {파라미터})</code>로 실행하는 함수. catalog가 오기 전에 쓸 <strong>임시 쿼리 2개</strong> 포함.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>분석 SQL을 앱에서 새로 쓰지 않고 ②가 검증한 쿼리를 그대로 써야 "SQL 결과 = 화면 숫자"가 보장돼요. catalog의 <code>type</code>대로 값을 변환해서 넘기니, 화면 위젯에서 이상한 값이 와도 SQL 문장 자체는 바뀌지 않아요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""②가 만든 sql/query_catalog.json을 읽어서 id로 쿼리를 실행한다."""
+import json
+from pathlib import Path
+
+from db import fetch_df
+
+CATALOG_PATH = Path(__file__).resolve().parent.parent / "sql" / "query_catalog.json"
+
+# [임시] catalog가 아직 없을 때만 쓰는 쿼리. ②의 query_catalog.json이 오면 이 부분은 지운다.
+TEMP_QUERIES = [
+    {
+        "id": "temp_open_by_server",
+        "title": "[임시] 서버별 미해결 건수",
+        "description": "catalog가 오기 전까지 화면을 만들어 보기 위한 임시 쿼리",
+        "sql": "SELECT hostname, COUNT(*) AS open_count FROM v_open_risks GROUP BY hostname ORDER BY open_count DESC",
+        "params": [],
+    },
+    {
+        "id": "temp_high_cvss",
+        "title": "[임시] CVSS 기준 이상 미해결 건",
+        "description": "catalog가 오기 전까지 쓰는 임시 쿼리",
+        "sql": "SELECT hostname, cve_id, cvss_score, assignee_name FROM v_open_risks "
+               "WHERE cvss_score &gt;= %(min_cvss)s ORDER BY cvss_score DESC",
+        "params": [{"name": "min_cvss", "label": "최소 CVSS", "type": "float", "default": 7.0}],
+    },
+]
+
+
+def load_catalog():
+    """catalog 파일이 있으면 그것을, 없으면 임시 쿼리를 돌려준다."""
+    if CATALOG_PATH.exists():
+        with open(CATALOG_PATH, encoding="utf-8") as f:
+            return json.load(f)["queries"]
+    return TEMP_QUERIES
+
+
+def get_query(query_id):
+    for q in load_catalog():
+        if q["id"] == query_id:
+            return q
+    raise KeyError(f"catalog에 없는 쿼리 id: {query_id}")
+
+
+def run_query(query_id, values=None):
+    """id로 쿼리를 찾아 실행한다. values에 없는 파라미터는 catalog의 default를 쓴다."""
+    q = get_query(query_id)
+    values = values or {}
+    params = {}
+    for p in q["params"]:
+        raw = values.get(p["name"], p["default"])
+        # catalog에 적힌 type대로 변환해서 넘긴다 (화면 위젯 값이 문자열로 와도 안전하게)
+        params[p["name"]] = {"int": int, "float": float, "str": str, "date": str}[p["type"]](raw)
+    return fetch_df(q["sql"], params or None)</pre>
+      <p>catalog 형식은 ② 가이드 <a href="../02-sql/guide.html#step-7">7단계</a>에 있어요.</p>
+      <h3 class="part">④ 확인 방법</h3>
+<pre># app 폴더에서. catalog가 아직 없을 때
+python -c "from queries import load_catalog, run_query; print([q['id'] for q in load_catalog()]); print(run_query('temp_open_by_server'))"</pre>
+<pre class="out">['temp_open_by_server', 'temp_high_cvss']
+      hostname  open_count
+0  web-prod-01           4
+1  web-prod-02           1</pre>
+<pre># ②의 catalog가 들어온 뒤
+python -c "from queries import run_query; print(run_query('q5_overdue_open'))"</pre>
+<pre class="out">      hostname         cve_id  ...  days_overdue assignee
+0  web-prod-01  CVE-0000-0001  ...            10      김보안
+1  web-prod-01  CVE-0000-0002  ...             3      이서버
+
+[2 rows x 7 columns]</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>KeyError: 'catalog에 없는 쿼리 id: …'</td><td>id 오타, 또는 catalog가 생겨서 임시 쿼리가 더는 안 읽힘</td><td>catalog의 id 목록 확인 후 화면 코드의 id 교체</td></tr>
+            <tr><td>ValueError: unsupported format character …</td><td>catalog SQL 안에 <code>%</code>가 한 번만 있음</td><td>②에게 알려서 <code>%%</code>로 고치기</td></tr>
+            <tr><td>json.decoder.JSONDecodeError</td><td>catalog JSON 문법 오류</td><td><code>python -m json.tool sql/query_catalog.json</code>으로 위치 확인 → ②에게 공유</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>catalog가 들어오면 <code>TEMP_QUERIES</code>를 지우고, 화면에서 쓰는 id를 catalog id로 바꿔요. catalog 쿼리가 화면에서 이상하게 나오면 SQL을 직접 고치지 말고 ②에게 알려요.</p>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="panel step" id="step-5">
+      <h2><span class="step-no">5</span>대시보드 화면 (app/main.py)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>app/main.py</code> — 지표 5개(<code>st.metric</code>)와 서버별 완료율 표·차트. 데이터는 ①이 만든 뷰 <code>v_open_risks</code>, <code>v_system_patch_rate</code>에서 읽어요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>뷰를 쓰면 "미해결", "완료율"의 정의가 DB 한 곳에만 있어요. 앱이 정의를 다시 계산하지 않으니 ②의 분석 결과와 대시보드 숫자가 어긋나지 않아요. "취약점 수"는 집계 단위가 헷갈리기 쉬워서 라벨에 "(서로 다른 CVE)"를 붙였어요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""대시보드 (첫 화면). 실행: streamlit run app/main.py"""
+import streamlit as st
+
+from db import fetch_df
+
+st.set_page_config(page_title="취약점·패치 관리", layout="wide")
+st.title("취약점·패치 관리 대시보드")
+
+
+@st.cache_data(ttl=60)   # 60초 동안 같은 결과를 재사용 → 화면을 움직일 때마다 DB에 다시 묻지 않는다
+def load_summary():
+    return fetch_df("""
+        SELECT
+          (SELECT COUNT(*) FROM systems)                                 AS server_count,
+          (SELECT COUNT(DISTINCT cve_id) FROM system_vulnerabilities)    AS cve_count,
+          (SELECT COUNT(*) FROM v_open_risks)                            AS open_count,
+          (SELECT COUNT(*) FROM v_open_risks WHERE cvss_score &gt;= 7.0)    AS high_open_count,
+          (SELECT COUNT(*) FROM v_open_risks WHERE is_overdue = 1)       AS overdue_count
+    """).iloc[0]
+
+
+@st.cache_data(ttl=60)
+def load_patch_rate():
+    return fetch_df("SELECT hostname, environment, total_count, patched_count, unresolved_count, "
+                    "risk_accepted_count, patch_rate_pct FROM v_system_patch_rate ORDER BY patch_rate_pct")
+
+
+summary = load_summary()
+c1, c2, c3, c4, c5 = st.columns(5)
+c1.metric("서버", int(summary["server_count"]))
+c2.metric("취약점 (서로 다른 CVE)", int(summary["cve_count"]))
+c3.metric("미해결 조치 건", int(summary["open_count"]))
+c4.metric("고위험 미해결 (CVSS 7.0+)", int(summary["high_open_count"]))
+c5.metric("기한 초과", int(summary["overdue_count"]))
+
+st.subheader("서버별 패치 완료율")
+rate = load_patch_rate()
+st.dataframe(rate, hide_index=True, width="stretch")
+st.bar_chart(rate.set_index("hostname")["patch_rate_pct"].astype(float))   # DECIMAL → float (차트용)
+st.caption("완료율 = patched / 전체 조치 건 × 100. 조치 건이 없는 서버는 빈칸(NULL)으로 나와요.")</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre># 레포 루트에서 (가상환경 켠 상태)
+streamlit run app/main.py</pre>
+<pre class="out">  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501</pre>
+      <p>브라우저에서 지표가 <strong>서버 3 · 취약점 5 · 미해결 5 · 고위험 2 · 기한 초과 2</strong>로 보이면 정상이에요 (seed 기준). 완료율 표는 web-prod-01 0.0 / web-prod-02 33.3 / dev-01 100.0.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ModuleNotFoundError: No module named 'db'</td><td><code>app</code> 폴더 안의 다른 위치에서 실행하거나 <code>python main.py</code>로 실행</td><td>레포 루트에서 <code>streamlit run app/main.py</code></td></tr>
+            <tr><td>차트 경고: I don't know how to infer vegalite type from 'decimal'</td><td>MySQL DECIMAL이 Python <code>Decimal</code>로 와서 차트가 숫자로 인식 못 함</td><td>차트에 넣기 전 <code>.astype(float)</code> (코드에 반영됨)</td></tr>
+            <tr><td>Please replace `use_container_width` with `width`</td><td>예전 예제 코드의 옵션</td><td><code>width="stretch"</code> 사용</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>대시보드 캡처는 발표 자료의 "시스템 소개" 첫 장면이 돼요. 지표 정의(특히 고위험 기준 7.0)는 ②와 맞춰요.</p>
+    </section>
+
+    <!-- STEP 6 -->
+    <section class="panel step" id="step-6">
+      <h2><span class="step-no">6</span>검색 화면 (app/pages/1_search.py)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>필터 위젯(CVE 번호, 소프트웨어, CVSS 범위, 조치 상태) → 파라미터 → 쿼리 → <code>st.dataframe</code>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>필터에 따라 WHERE 조건 개수가 바뀌니 SQL을 조립해야 해요. 이때 <strong>코드에 고정된 조건 문장만</strong> 붙이고, 사용자가 입력한 값은 전부 <code>params</code> 리스트로 넘겨요. 이게 "조립"과 "이어 붙이기"의 차이예요. 실행한 SQL을 화면에 펼쳐 보여주면 발표 때 "화면 뒤에서 이 SQL이 돈다"를 바로 보여줄 수 있어요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""검색 화면: 필터 위젯 → 파라미터 → 쿼리 → 표"""
+import streamlit as st
+
+from db import fetch_df
+
+st.title("취약점 검색")
+
+col1, col2, col3, col4 = st.columns(4)
+cve_text = col1.text_input("CVE 번호 (일부만 입력해도 됨)")
+software = col2.selectbox("소프트웨어", ["전체", "Apache HTTP Server", "OpenSSH"])
+cvss_range = col3.slider("CVSS 범위", 0.0, 10.0, (0.0, 10.0), step=0.1)
+statuses = col4.multiselect("조치 상태", ["open", "in_progress", "patched", "risk_accepted"],
+                            default=["open", "in_progress"])
+include_no_score = st.checkbox("CVSS 점수가 없는 취약점도 포함", value=True)
+
+# 조건 문장은 코드에 고정된 문자열만 붙이고, 사용자가 입력한 값은 전부 params로 넘긴다.
+conditions = []
+params = []
+if cve_text:
+    conditions.append("v.cve_id LIKE %s")
+    params.append(f"%{cve_text}%")
+if software != "전체":
+    conditions.append("sw.name = %s")
+    params.append(software)
+if include_no_score:
+    conditions.append("(v.cvss_score BETWEEN %s AND %s OR v.cvss_score IS NULL)")
+else:
+    conditions.append("v.cvss_score BETWEEN %s AND %s")
+params.extend(cvss_range)
+if statuses:
+    conditions.append("sv.status IN (" + ", ".join(["%s"] * len(statuses)) + ")")
+    params.extend(statuses)
+
+sql = """
+SELECT sv.sv_id, s.hostname, sw.name AS software, v.cve_id, v.cvss_score,
+       sv.status, st.name AS assignee, sv.due_date
+FROM system_vulnerabilities sv
+JOIN systems s          ON s.system_id = sv.system_id
+JOIN software sw        ON sw.software_id = sv.software_id
+JOIN vulnerabilities v  ON v.cve_id = sv.cve_id
+LEFT JOIN staff st      ON st.staff_id = sv.assignee_id
+WHERE """ + " AND ".join(conditions) + """
+ORDER BY v.cvss_score DESC, s.hostname"""
+
+result = fetch_df(sql, params)
+st.write(f"검색 결과 {len(result)}건")
+st.dataframe(result, hide_index=True, width="stretch")
+with st.expander("실행한 SQL 보기"):
+    st.code(sql, language="sql")
+    st.write("파라미터:", params)</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>왼쪽 메뉴 <strong>search</strong> → 기본 필터(open, in_progress)에서 <strong>검색 결과 5건</strong>. CVE 번호 칸에 <code>0001</code>을 넣으면 1건. CVE 번호 칸에 <code>' OR 1=1 -- </code>를 넣으면 <strong>0건</strong>이에요 (공격 문자열이 그냥 검색어로만 쓰임). 이 세 가지를 실제로 확인했어요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ValueError: unsupported format character ''' (0x27) …</td><td>SQL 문장에 <code>LIKE '%…'</code>를 직접 씀</td><td><code>%</code>는 값 쪽에: <code>"v.cve_id LIKE %s"</code> + <code>params.append(f"%{text}%")</code></td></tr>
+            <tr><td>상태를 하나도 안 고르면 SQL 오류</td><td><code>IN ()</code>이 빈 괄호</td><td>코드처럼 <code>if statuses:</code>일 때만 조건 추가</td></tr>
+            <tr><td>점수 없는 CVE가 안 보임</td><td>BETWEEN이 NULL을 뺌</td><td>"점수 없는 취약점도 포함" 체크박스 (② 가이드 4단계 참고)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>"공격 문자열을 넣어도 0건" 시연은 발표의 보안 파트에 넣기 좋아요. 시연 순서를 팀과 정해요.</p>
+    </section>
+
+    <!-- STEP 7 -->
+    <section class="panel step" id="step-7">
+      <h2><span class="step-no">7</span>패치 관리 화면 (app/pages/2_patch.py)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>조치 건 선택 → 상태·담당자 변경 폼 → <code>UPDATE … updated_by</code> → commit → 트리거가 남긴 이력 확인.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <ul>
+        <li><strong>updated_by를 같은 UPDATE에:</strong> 이력은 ①의 트리거가 <code>patch_history</code>에 자동으로 남기고, 변경자는 <code>NEW.updated_by</code> 값을 써요. 빠뜨리면 이전 변경자의 이름으로 기록돼요 (<code>docs/db_dictionary.md</code> 맨 위 규칙).</li>
+        <li><strong>한 트랜잭션:</strong> 상태 변경과 비고 기록이 둘 다 되거나 둘 다 안 되게 해요. 중간에 실패하면 rollback으로 원래대로 돌아가요.</li>
+        <li><strong>FOR UPDATE:</strong> 두 사람이 같은 건을 동시에 바꿔도 하나씩 처리되게 행을 잠가요.</li>
+        <li><strong>patched_at:</strong> <code>patched</code>로 바꿀 때 완료 시각이 없으면 CHECK 제약(3819)에 걸리니 SQL에서 <code>NOW()</code>로 채워요.</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>"""패치 관리 화면: 목록 선택 → 상태·담당자 변경 → 한 트랜잭션으로 저장 → 이력 확인"""
+import pandas as pd
+import pymysql
+import streamlit as st
+
+from db import fetch_df, get_connection
+
+st.title("패치 관리")
+
+STATUSES = ["open", "in_progress", "patched", "risk_accepted"]
+
+
+@st.cache_data(ttl=60)
+def load_items():
+    return fetch_df("""
+        SELECT sv.sv_id, s.hostname, sv.cve_id, sv.status, sv.assignee_id, sv.due_date
+        FROM system_vulnerabilities sv
+        JOIN systems s ON s.system_id = sv.system_id
+        ORDER BY sv.sv_id""")
+
+
+@st.cache_data(ttl=300)
+def load_staff():
+    return fetch_df("SELECT staff_id, name FROM staff ORDER BY staff_id")
+
+
+def change_status(sv_id, new_status, assignee_id, staff_id, note):
+    """상태 변경과 비고 기록을 하나의 트랜잭션으로 처리한다. 둘 중 하나라도 실패하면 둘 다 취소."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            # 0) 현재 상태를 읽으면서 행을 잠근다 (FOR UPDATE: 커밋 전까지 다른 사람이 이 행을 못 바꿈)
+            cur.execute("SELECT status FROM system_vulnerabilities WHERE sv_id = %s FOR UPDATE", (sv_id,))
+            old_status = cur.fetchone()["status"]
+
+            # 1) 상태 변경. updated_by를 반드시 같이 SET → 트리거가 patch_history.changed_by에 이 값을 기록
+            cur.execute(
+                """UPDATE system_vulnerabilities
+                      SET status      = %s,
+                          patched_at  = IF(%s = 'patched', COALESCE(patched_at, NOW()), patched_at),
+                          assignee_id = %s,
+                          updated_by  = %s
+                    WHERE sv_id = %s""",
+                (new_status, new_status, assignee_id, staff_id, sv_id),
+            )
+            # 2) 트리거가 방금 만든 이력 행에 비고를 남긴다 (상태가 실제로 바뀌었을 때만 이력 행이 생김)
+            if note and old_status != new_status:
+                cur.execute("SELECT MAX(history_id) AS hid FROM patch_history WHERE sv_id = %s", (sv_id,))
+                hid = cur.fetchone()["hid"]
+                cur.execute("UPDATE patch_history SET note = %s WHERE history_id = %s", (note, hid))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+items = load_items()
+staff = load_staff()
+staff_names = dict(zip(staff["staff_id"], staff["name"]))
+
+# 저장 직후 st.rerun()으로 다시 그려지므로, 성공 메시지는 session_state에 넣어 두었다가 보여준다
+if "message" in st.session_state:
+    st.success(st.session_state.pop("message"))
+
+st.dataframe(items, hide_index=True, width="stretch")
+
+# 조치 건 선택은 폼 밖에 둔다. 폼 안의 위젯은 "저장"을 누르기 전까지 값이 반영되지 않아서
+# 아래의 "현재 상태" 표시와 기본값이 바뀌지 않기 때문이다.
+sv_id = st.selectbox("조치 건 (sv_id)", items["sv_id"].tolist())
+current = items[items["sv_id"] == sv_id].iloc[0]
+st.caption(f"현재: {current['hostname']} / {current['cve_id']} / {current['status']}")
+
+with st.form("change_form"):
+    new_status = st.selectbox("새 상태", STATUSES, index=STATUSES.index(current["status"]))
+    assignee_options = [None] + staff["staff_id"].tolist()
+    current_assignee = None if pd.isna(current["assignee_id"]) else int(current["assignee_id"])
+    assignee_id = st.selectbox("담당자", assignee_options, index=assignee_options.index(current_assignee),
+                               format_func=lambda x: "(미배정)" if x is None else staff_names[x])
+    staff_id = st.selectbox("변경하는 사람 (updated_by)", staff["staff_id"].tolist(),
+                            format_func=lambda x: staff_names[x])
+    note = st.text_input("비고 (위험 수용 사유 등)")
+    submitted = st.form_submit_button("저장")
+
+if submitted:
+    try:
+        change_status(int(sv_id), new_status, assignee_id, int(staff_id), note)
+        st.cache_data.clear()   # 캐시를 지워야 표에 바뀐 값이 바로 보인다
+        st.session_state["message"] = "저장했어요."
+        st.rerun()              # 바뀐 값으로 화면 전체를 다시 그린다
+    except pymysql.err.OperationalError as e:
+        if e.args[0] == 3819:
+            st.error("CHECK 제약 위반: patched로 바꿀 때는 완료 시각이 필요해요.")
+        else:
+            st.error(f"DB 오류: {e}")
+    except pymysql.err.IntegrityError as e:
+        st.error(f"무결성 오류: {e}")
+
+st.subheader("변경 이력")
+history = fetch_df("""
+    SELECT h.history_id, h.old_status, h.new_status, st.name AS changed_by, h.changed_at, h.note
+    FROM patch_history h
+    LEFT JOIN staff st ON st.staff_id = h.changed_by
+    WHERE h.sv_id = %s
+    ORDER BY h.history_id""", (int(sv_id),))
+st.dataframe(history, hide_index=True, width="stretch")</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>화면에서 sv_id <strong>4</strong> 선택 → 새 상태 <code>risk_accepted</code>, 변경하는 사람 <code>김보안</code>, 비고 입력 → 저장. 이어서 같은 건을 <code>patched</code>, <code>이서버</code>로 저장. 화면 아래 "변경 이력" 표가 이렇게 나오면 정상이에요 (실제 실행 결과):</p>
+<pre class="out">history_id  old_status     new_status     changed_by  note
+4           None           open           None        조치 건 등록
+17          open           risk_accepted  김보안      내부망 전용, 다음 점검 때 재검토
+18          risk_accepted  patched        이서버      None</pre>
+      <p>DB에서도 직접 확인할 수 있어요 (트리거가 남긴 기록):</p>
+<pre>SELECT h.history_id, h.sv_id, h.old_status, h.new_status, st.name AS changed_by, h.note
+FROM patch_history h
+LEFT JOIN staff st ON st.staff_id = h.changed_by
+WHERE h.sv_id = 4
+ORDER BY h.history_id;</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>다른 조치 건을 골랐는데 엉뚱한 건이 바뀜</td><td>조치 건 선택 상자를 <code>st.form</code> 안에 둠. 폼 안 위젯은 "저장"을 누를 때까지 값이 반영 안 됨</td><td>선택 상자는 폼 밖에 (코드처럼)</td></tr>
+            <tr><td>저장 후 다시 바꾸면 고른 상태가 무시됨</td><td>저장 직후 화면이 옛 값 기준이라 다음 실행 때 위젯이 초기화됨</td><td>저장 후 <code>st.cache_data.clear()</code> + <code>st.rerun()</code></td></tr>
+            <tr><td>pymysql.err.OperationalError: (3819, "Check constraint 'chk_sv_patched_has_patched_at' is violated.")</td><td><code>patched</code>인데 <code>patched_at</code>이 NULL</td><td>UPDATE에서 <code>patched_at</code>을 같이 SET</td></tr>
+            <tr><td>pymysql.err.DataError: (1265, "Data truncated for column 'status' at row 1")</td><td>ENUM에 없는 상태값(예: <code>done</code>)</td><td><code>STATUSES</code> 목록의 4개 값만 사용</td></tr>
+            <tr><td>이력의 changed_by가 엉뚱한 사람</td><td>UPDATE에 <code>updated_by</code> 누락</td><td>status를 바꾸는 모든 UPDATE에 <code>updated_by = %s</code></td></tr>
+            <tr><td>저장했는데 표 값이 안 바뀜</td><td><code>st.cache_data</code>가 옛 결과를 돌려줌</td><td>저장 성공 후 <code>st.cache_data.clear()</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>"상태 변경 → 이력 자동 기록"은 ①의 트리거를 화면으로 보여주는 장면이에요. ①과 시연 순서를 맞춰요. 상태를 거꾸로(<code>patched → open</code>) 바꿀 때 <code>patched_at</code>을 비울지는 ①의 설계 결정(<code>docs/design_decisions.md</code>)을 따라요.</p>
+    </section>
+
+    <!-- STEP 8 -->
+    <section class="panel step" id="step-8">
+      <h2><span class="step-no">8</span>분석 화면 (app/pages/3_analysis.py)</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>catalog의 질문을 드롭다운으로 고르면 파라미터 입력 위젯이 자동으로 생기고, 결과를 표·막대 차트로 보여주는 화면.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>catalog의 <code>params</code> 정의(이름·타입·기본값)로 위젯을 만들기 때문에, ②가 질문을 추가해도 <strong>화면 코드는 그대로</strong>예요. 이 드롭다운이 LLM이 실패했을 때의 대체 경로도 돼요 (<a href="#step-11">11단계</a>).</p>
+      <h3 class="part">③ 코드</h3>
+<pre>"""분석 화면: ②의 query_catalog.json 쿼리를 골라 실행하고 표·차트로 보여준다."""
+import streamlit as st
+
+from queries import load_catalog, run_query
+
+st.title("분석")
+
+catalog = load_catalog()
+titles = {q["title"]: q for q in catalog}
+chosen = titles[st.selectbox("분석 질문", list(titles))]
+st.caption(chosen["description"])
+
+# catalog의 params 정의대로 입력 위젯을 자동으로 만든다
+values = {}
+for p in chosen["params"]:
+    if p["type"] == "int":
+        values[p["name"]] = st.number_input(p["label"], value=int(p["default"]), step=1)
+    elif p["type"] == "float":
+        values[p["name"]] = st.number_input(p["label"], value=float(p["default"]), step=0.1)
+    else:
+        values[p["name"]] = st.text_input(p["label"], value=str(p["default"]))
+
+result = run_query(chosen["id"], values)
+st.dataframe(result, hide_index=True, width="stretch")
+
+# 숫자 컬럼이 있으면 첫 번째 컬럼 기준 막대 차트
+numeric = result.select_dtypes("number").columns.tolist()
+if len(result) and numeric:
+    st.bar_chart(result.set_index(result.columns[0])[numeric[0]])
+
+with st.expander("실행한 SQL 보기"):
+    st.code(chosen["sql"], language="sql")
+    st.write("파라미터:", values)</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>메뉴 <strong>analysis</strong> → "기한을 넘긴 미해결 조치 건" 선택 → 최소 초과 일수 1 → 표 2행(web-prod-01, CVE-0000-0001 10일 / CVE-0000-0002 3일)과 <code>days_overdue</code> 막대 차트. 임시 쿼리만 있을 때는 "[임시] 서버별 미해결 건수"가 보여요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>차트가 안 그려짐</td><td>숫자 컬럼이 DECIMAL(<code>cvss_score</code>, 완료율)뿐이라 숫자로 인식 안 됨</td><td>차트용으로 <code>result[col].astype(float)</code> 변환</td></tr>
+            <tr><td>ModuleNotFoundError: No module named 'queries'</td><td>페이지 파일을 단독으로 실행</td><td>항상 <code>streamlit run app/main.py</code>로 실행 후 메뉴로 이동</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>질문별 차트 종류(막대/선)를 정하고 싶으면 ②와 상의해서 catalog에 필드(예: <code>"chart": "bar"</code>)를 추가해요.</p>
+    </section>
+
+    <!-- STEP 9 -->
+    <section class="panel step" id="step-9">
+      <h2><span class="step-no">9</span>캐싱·실행·디버깅</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>새 파일은 없어요. 캐시 규칙을 정리하고 자주 나는 에러를 해결해요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>Streamlit은 위젯을 하나 바꿀 때마다 파일 전체를 다시 실행해요. 그때마다 DB에 묻지 않도록 <code>@st.cache_data(ttl=60)</code>로 결과를 잠시 저장해요. 대신 <strong>상태를 바꾼 뒤에는 캐시를 지워야</strong> 바뀐 값이 보여요. 안 지우면 시연 중에 "저장했는데 안 바뀌었어요"가 생겨요.</p>
+      <h3 class="part">③ 코드 / 명령어</h3>
+<pre># 캐시 규칙
+@st.cache_data(ttl=60)        # 조회 함수에만 붙이기
+def load_items(): ...
+
+st.cache_data.clear()         # INSERT/UPDATE를 commit한 직후 한 번
+
+# 실행 (레포 루트, 가상환경 켠 상태)
+streamlit run app/main.py
+
+# 포트가 이미 쓰이고 있을 때
+streamlit run app/main.py --server.port 8502</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>패치 관리에서 상태를 바꾼 직후 대시보드로 가서 "미해결" 숫자가 바로 줄어 있으면 캐시 처리가 맞아요.</p>
+      <h3 class="part">⑤ 자주 나는 에러</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ModuleNotFoundError: No module named 'pymysql'</td><td>가상환경 꺼짐</td><td>Activate 후 실행 (<a href="#step-2">2단계</a>)</td></tr>
+            <tr><td>(2003, "Can't connect to MySQL server on '127.0.0.1' …")</td><td>접속 거부: DB 꺼짐/포트 다름</td><td><code>docker compose ps</code> → Up이 아니면 <code>docker compose up -d</code></td></tr>
+            <tr><td>(1045, "Access denied for user …")</td><td>비밀번호·사용자 불일치</td><td><code>.env</code> 확인 (<a href="#step-3">3단계</a>)</td></tr>
+            <tr><td>한글이 <code>???</code>나 깨진 글자로 보임</td><td>연결 문자셋이 utf8mb4가 아님</td><td><code>get_connection()</code>의 <code>charset="utf8mb4"</code> 확인. 터미널 mysql은 <code>--default-character-set=utf8mb4</code></td></tr>
+            <tr><td>값을 바꿨는데 화면 숫자가 그대로</td><td>캐시</td><td>commit 직후 <code>st.cache_data.clear()</code>. 그래도 안 되면 터미널에서 Ctrl+C로 끄고 다시 <code>streamlit run</code></td></tr>
+            <tr><td>RuntimeError: 'cryptography' package is required …</td><td>MySQL 8 인증용 패키지 없음</td><td><code>pip install -r requirements.txt</code> (cryptography 포함)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>새로 만난 에러와 해결법은 <code>app/README.md</code>의 "문제 해결"에 한 줄씩 추가해요.</p>
+    </section>
+
+    <!-- STEP 10 -->
+    <section class="panel step" id="step-10">
+      <h2><span class="step-no">10</span>통합 체크리스트와 실행 가이드</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>팀원 결과물이 들어올 때마다 확인할 목록과 <code>app/README.md</code>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>③은 ①·②·④의 결과물이 모두 모이는 곳이라 통합 문제가 가장 먼저 보여요. 들어올 때마다 같은 순서로 확인하면 발표 직전에 터지는 일을 막을 수 있어요.</p>
+      <h3 class="part">③ 체크리스트</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>들어온 것</th><th>확인할 것</th></tr></thead>
+          <tbody>
+            <tr><td>① 스키마·뷰 변경</td><td><code>docker compose down -v</code> → <code>up -d</code>로 새로 적재 → 화면 4개 모두 에러 없이 열리는지. 컬럼 이름이 바뀌었으면 <code>main.py</code>, <code>1_search.py</code>, <code>2_patch.py</code>의 SQL 수정</td></tr>
+            <tr><td>② query_catalog.json</td><td><code>python -m json.tool</code> 통과 → <code>TEMP_QUERIES</code> 삭제 → 분석 화면에서 모든 질문 실행 → 숫자가 ②의 검증표와 같은지</td></tr>
+            <tr><td>④ 실제 CVE 데이터</td><td>④ 가이드 순서대로 적재한 DB에서 대시보드 숫자 확인, 점수 없는(NULL) CVE가 검색에서 보이는지</td></tr>
+            <tr><td>④ 시연용 가상 데이터</td><td>기한 초과, 완료율 0%/100% 서버, 담당자 없는 건이 화면에 나오는지 → 시연 시나리오에 사용</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:14px"><code>app/README.md</code> 양식</p>
+<pre># 실행 가이드
+
+## 처음 한 번
+1. Docker Desktop 실행 → 레포 루트에서 `docker compose up -d`
+2. `.env.example`을 복사해 `.env` 만들기
+3. `python -m venv .venv` → 가상환경 켜기 → `pip install -r requirements.txt`
+
+## 매번
+1. `docker compose up -d`
+2. 가상환경 켜기
+3. `streamlit run app/main.py` → http://localhost:8501
+
+## 화면
+- 대시보드: 지표 5개, 서버별 완료율
+- search: CVE·소프트웨어·CVSS·상태로 검색
+- patch: 상태·담당자 변경 (이력 자동 기록)
+- analysis: ②의 분석 쿼리
+
+## 문제 해결
+| 증상 | 해결 |
+|---|---|
+| Can't connect to MySQL server | docker compose up -d |</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>README만 보고 다른 팀원 PC에서 처음부터 띄워 보기. 막힌 곳이 있으면 README를 고쳐요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>내 PC에선 되는데 발표 PC에서 안 됨</td><td>발표 PC에 데이터·패키지가 다름</td><td>발표 전날 발표 PC에서 README 순서대로 리허설</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>발표 자료</strong>: 화면 캡처와 시연 순서 (대시보드 → 검색 → 패치 변경 → 이력 → 분석).</p>
+    </section>
+
+    <!-- STEP 11 -->
+    <section class="panel step" id="step-11">
+      <h2><span class="step-no">11</span>(11/28 이후, 여유가 되면) LLM 구조</h2>
+      <div class="callout warn">LLM은 부가 기능이에요. 1~10단계가 모두 끝나고 시연이 안정된 뒤에만 시작해요. 여기서는 구조만 설명하고 코드는 쓰지 않아요.</div>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>자연어 질문을 받아 catalog 쿼리 하나를 고르게 하는 화면 (예: <code>app/pages/4_ask.py</code>).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>LLM이 SQL을 직접 쓰게 하면 틀린 SQL이나 위험한 SQL이 실행될 수 있어요. 대신 <strong>②가 검증한 쿼리 중에서 고르게만</strong> 하면, 실행되는 SQL은 항상 검증된 것이고 LLM은 "어떤 질문인지 분류하는 일"만 해요.</p>
+      <h3 class="part">③ 흐름</h3>
+<pre>1. 사용자 질문         "기한 3일 넘은 미해결 건 보여줘"
+2. LLM에게 전달        질문 + catalog의 id·title·description·params 목록
+                       → "이 중 하나를 골라 JSON으로만 답해"
+3. LLM 응답 (JSON)     {"id": "q5_overdue_open", "params": {"min_days_overdue": 3}}
+4. 검증 (Python)       id가 catalog에 있는가? params 이름·타입이 맞는가? 값 범위가 정상인가?
+                       → 하나라도 아니면 5로 가지 않고 드롭다운 화면으로
+5. 실행               run_query(id, params)   (4단계 함수 그대로)
+6. 요약               결과 행만 LLM에게 주고 "이 행들만 근거로 요약" → 화면에
+                       실행한 SQL 원문과 결과 표를 요약 옆에 같이 표시
+실패 시               3·4·5 중 어디서든 실패하면 8단계의 드롭다운으로 같은 쿼리를 고르게 함</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>LLM 없이(API 키를 지운 상태로) 앱을 켜도 1~10단계 화면이 모두 정상이어야 해요. 그게 "LLM 없이도 시연이 된다"의 확인이에요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>위험</th><th>대응</th></tr></thead>
+          <tbody>
+            <tr><td>LLM이 catalog에 없는 id를 지어냄</td><td>4번 검증에서 거르고 드롭다운으로</td></tr>
+            <tr><td>요약에 결과에 없는 숫자가 섞임</td><td>요약 옆에 결과 표를 항상 같이 보여주기</td></tr>
+            <tr><td>API 키가 커밋됨</td><td>키는 <code>.env</code>에만. 키 이름만 <code>.env.example</code>에 추가</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>catalog의 <code>description</code>이 분류 정확도를 좌우해요. 설명이 애매한 질문은 ②에게 문장 수정을 부탁해요.</p>
+    </section>
+
+    <footer>
+      <p><a href="./">← ③ 역할 페이지</a> · <a href="#files">↑ 목차</a></p>
+      <p>막히면 단톡에 에러 메시지 전체를 복사해서 공유</p>
+    </footer>
+  </main>
+  <script src="../../assets/site.js"></script>
+</body>
+</html>

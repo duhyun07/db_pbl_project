@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 02 SQL 구현 가이드</title>
+  <link rel="stylesheet" href="../../assets/style.css">
+</head>
+<body class="sub" data-role="02-sql">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../../guide/">공통</a>
+        <a href="../../github/">GitHub</a>
+        <a href="../01-db/">① DB</a>
+        <a href="../02-sql/" aria-current="page">② SQL</a>
+        <a href="../03-app/">③ Python</a>
+        <a href="../04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">02 · 구현 가이드</p>
+    <h1>SQL 분석·성능 구현 가이드</h1>
+    <p class="intro">문법은 수업에서 배운 그대로 쓰면 돼요. 이 페이지는 <strong>"분석 질문 → 검증된 쿼리 → 성능 분석 결과물"</strong>을 어떤 순서로, 어떤 파일에 만드는지 처음부터 끝까지 따라가는 안내서예요. <a href="./">← 역할 페이지로</a></p>
+
+    <div class="callout warn" style="margin-top:20px">이 페이지의 CVE 번호(<code>CVE-0000-xxxx</code>), 점수, 서버, 담당자는 모두 ①의 <code>db/seed.sql</code>에 들어 있는 <strong>예시용 가짜 데이터</strong>예요. 출력에 보이는 날짜는 실행한 날에 따라 달라져요 (이 페이지는 2026-11-22에 실행한 결과).</div>
+
+    <p class="section-label">CONTENTS · 목차</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>단계</h2>
+        <ol class="toc">
+          <li><a href="#step-1">MySQL 접속 환경</a></li>
+          <li><a href="#step-2">질문 하나를 쿼리로 바꾸는 절차</a></li>
+          <li><a href="#step-3">분석 질문 7개 설계와 뼈대</a></li>
+          <li><a href="#step-4">이 프로젝트에서 틀리기 쉬운 부분</a></li>
+          <li><a href="#step-5">analysis_queries.sql 작성 규칙</a></li>
+          <li><a href="#step-6">결과 검증과 검증표</a></li>
+          <li><a href="#step-7">query_catalog.json 만들기</a></li>
+          <li><a href="#step-8">성능: 대량 데이터와 기준 측정</a></li>
+          <li><a href="#step-9">성능: 인덱스 추가와 재측정</a></li>
+          <li><a href="#step-10">성능: 쿼리 작성 방식 비교</a></li>
+          <li><a href="#step-11">performance.md 정리</a></li>
+        </ol>
+      </div>
+      <div class="panel" id="files">
+        <h2>이 가이드를 끝내면 만들어지는 파일</h2>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><td><code>sql/analysis_queries.sql</code></td><td>질문 7개의 쿼리 + 주석</td></tr>
+              <tr><td><code>sql/query_catalog.json</code></td><td>③이 읽어서 실행하는 쿼리 목록</td></tr>
+              <tr><td><code>sql/benchmark.py</code></td><td>실행 시간 반복 측정 스크립트</td></tr>
+              <tr><td><code>docs/query_validation.md</code></td><td>기댓값 vs 결과 검증표</td></tr>
+              <tr><td><code>docs/performance.md</code></td><td>인덱스 전후·방식별 비교표 (발표용)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <p class="section-label">STEPS · 단계별 구현</p>
+
+    <!-- STEP 1 -->
+    <section class="panel step" id="step-1">
+      <h2><span class="step-no">1</span>MySQL 접속 환경</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>파일은 없어요. 터미널과 GUI 도구(MySQL Workbench 또는 DBeaver) 두 가지로 팀 DB에 접속할 수 있게 해 둡니다.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>쿼리는 GUI에서 결과를 보며 고치고, 최종본은 터미널에서 한 번 더 돌려서 "누가 돌려도 같은 결과"인지 확인해요. 모두 같은 Docker DB와 같은 <code>seed.sql</code>을 쓰니까 검증표의 기댓값도 팀 전체가 똑같이 나와요.</p>
+      <h3 class="part">③ 명령어 / 설정값</h3>
+<pre># 레포 루트(vuln-mgmt)에서. DB가 꺼져 있으면 먼저 켜기
+docker compose up -d
+
+# 터미널로 접속 (비밀번호는 .env의 MYSQL_PASSWORD)
+# --default-character-set=utf8mb4 가 없으면 한글이 ???로 보여요
+docker compose exec db mysql --default-character-set=utf8mb4 -u vuln_app -p vuln_mgmt</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>GUI 설정 항목</th><th>값</th></tr></thead>
+          <tbody>
+            <tr><td>Host</td><td><code>127.0.0.1</code></td></tr>
+            <tr><td>Port</td><td><code>.env</code>의 <code>MYSQL_PORT</code> (기본 <code>3306</code>)</td></tr>
+            <tr><td>Username / Password</td><td><code>.env</code>의 <code>MYSQL_USER</code> / <code>MYSQL_PASSWORD</code> (기본 <code>vuln_app</code>)</td></tr>
+            <tr><td>Database (Default Schema)</td><td><code>vuln_mgmt</code></td></tr>
+            <tr><td>DBeaver 추가 설정</td><td>Driver properties에서 <code>allowPublicKeyRetrieval</code> = <code>true</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>SHOW TABLES;
+SELECT COUNT(*) FROM system_vulnerabilities;</pre>
+<pre class="out">Tables_in_vuln_mgmt
+cve_package_status
+installed_software
+patch_history
+software
+staff
+system_vulnerabilities
+systems
+v_open_risks
+v_system_patch_rate
+vulnerabilities
+COUNT(*)
+9</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러 / 증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>한글이 <code>???</code>로 보임</td><td>컨테이너 안 mysql 클라이언트의 기본 문자셋이 latin1</td><td>접속 명령에 <code>--default-character-set=utf8mb4</code> 추가</td></tr>
+            <tr><td>ERROR 1045 (28000): Access denied for user ...</td><td>비밀번호가 <code>.env</code>와 다름</td><td><code>.env</code>의 <code>MYSQL_USER</code>/<code>MYSQL_PASSWORD</code>를 그대로 입력</td></tr>
+            <tr><td>Public Key Retrieval is not allowed (DBeaver)</td><td>MySQL 8 기본 인증 방식 때문</td><td>Driver properties → <code>allowPublicKeyRetrieval=true</code></td></tr>
+            <tr><td>COUNT(*)가 9가 아님</td><td>누군가 실험하며 데이터를 바꿈</td><td><code>docker compose down -v</code> → <code>docker compose up -d</code>로 schema+seed 다시 적재</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>없어요. 다만 데이터를 바꾸는 실험(UPDATE, INSERT)은 <code>START TRANSACTION; … ROLLBACK;</code> 안에서만 하세요. 그래야 내 검증 결과가 다른 팀원과 어긋나지 않아요.</p>
+    </section>
+
+    <!-- STEP 2 -->
+    <section class="panel step" id="step-2">
+      <h2><span class="step-no">2</span>질문 하나를 쿼리로 바꾸는 절차</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>질문 5 <strong>"처리 기한을 넘긴 미해결 건과 담당자는?"</strong>의 완성 쿼리. 이 절차를 나머지 질문에도 똑같이 적용해요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>처음부터 긴 쿼리를 쓰면 결과가 틀렸을 때 어디서 틀렸는지 못 찾아요. <strong>테이블 하나 → 조건 → 조인 하나씩</strong> 늘리면서 행 수가 예상대로 바뀌는지 보면, 발표 때 "이 쿼리가 맞다는 걸 어떻게 확인했나"에 바로 답할 수 있어요 (채점 기준 3 정확성).</p>
+      <h3 class="part">③ 절차와 코드</h3>
+      <p><strong>A. 필요한 테이블 찾기</strong> — 질문의 단어를 컬럼으로 바꿔요. <code>docs/db_dictionary.md</code>에서 찾습니다.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>질문의 단어</th><th>테이블.컬럼</th></tr></thead>
+          <tbody>
+            <tr><td>미해결</td><td><code>system_vulnerabilities.status IN ('open','in_progress')</code></td></tr>
+            <tr><td>처리 기한을 넘긴</td><td><code>system_vulnerabilities.due_date &lt; CURDATE()</code></td></tr>
+            <tr><td>(어느 서버)</td><td><code>systems.hostname</code></td></tr>
+            <tr><td>담당자</td><td><code>staff.name</code> (<code>assignee_id</code>가 NULL일 수 있음)</td></tr>
+            <tr><td>(위험도로 정렬)</td><td><code>vulnerabilities.cvss_score</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="margin-top:14px"><strong>B. ERD에서 조인 경로 정하기</strong> — 중심 테이블은 <code>system_vulnerabilities</code>(sv). <code>docs/erd.md</code>의 관계 요약 표에서:</p>
+<pre>sv.system_id   → systems.system_id         (항상 있음: JOIN)
+sv.cve_id      → vulnerabilities.cve_id    (항상 있음: JOIN)
+sv.assignee_id → staff.staff_id            (NULL 가능: LEFT JOIN)</pre>
+      <p style="margin-top:14px"><strong>C. 작은 쿼리부터 결과를 보며 확장하기</strong></p>
+<pre>-- C-1. 중심 테이블 + 첫 번째 조건만
+SELECT sv_id, status, due_date
+FROM system_vulnerabilities
+WHERE status IN ('open', 'in_progress');</pre>
+<pre class="out">sv_id | status      | due_date
+1     | open        | 2026-11-12
+2     | in_progress | 2026-11-19
+3     | open        | 2026-12-06
+4     | open        | NULL
+7     | open        | 2026-12-22</pre>
+<pre>-- C-2. 기한 조건 추가 → 5행에서 2행으로 줄어야 함 (sv 4는 기한이 NULL이라 빠짐)
+SELECT sv_id, status, due_date
+FROM system_vulnerabilities
+WHERE status IN ('open', 'in_progress')
+  AND due_date &lt; CURDATE();</pre>
+<pre class="out">sv_id | status      | due_date
+1     | open        | 2026-11-12
+2     | in_progress | 2026-11-19</pre>
+<pre>-- C-3. 조인을 하나씩 추가. 조인을 붙였는데 행 수가 바뀌면 조인 조건을 의심하기
+SELECT sv.sv_id, s.hostname, sv.cve_id, sv.status, sv.due_date
+FROM system_vulnerabilities sv
+JOIN systems s ON s.system_id = sv.system_id
+WHERE sv.status IN ('open', 'in_progress')
+  AND sv.due_date &lt; CURDATE();</pre>
+<pre class="out">sv_id | hostname    | cve_id        | status      | due_date
+1     | web-prod-01 | CVE-0000-0001 | open        | 2026-11-12
+2     | web-prod-01 | CVE-0000-0002 | in_progress | 2026-11-19</pre>
+<pre>-- C-4. 완성: 담당자(LEFT JOIN), 초과 일수, 정렬
+SELECT
+  s.hostname,
+  sv.cve_id,
+  v.cvss_score,
+  sv.status,
+  sv.due_date,
+  DATEDIFF(CURDATE(), sv.due_date) AS days_overdue,
+  COALESCE(st.name, '(미배정)')     AS assignee
+FROM system_vulnerabilities sv
+JOIN systems         s  ON s.system_id = sv.system_id
+JOIN vulnerabilities v  ON v.cve_id    = sv.cve_id
+LEFT JOIN staff      st ON st.staff_id = sv.assignee_id
+WHERE sv.status IN ('open', 'in_progress')
+  AND sv.due_date &lt; CURDATE()
+ORDER BY days_overdue DESC, v.cvss_score DESC;</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p><strong>D. 결과 검증</strong> — seed.sql 주석의 표로 손으로 먼저 계산해요. 기한이 지난 건은 sv 1(10일 전, open), sv 2(3일 전, in_progress), sv 5(5일 전, <em>patched</em>)인데 sv 5는 완료라서 빠져요. → <strong>2행</strong>. 그리고 ①이 만든 뷰와 숫자가 같은지도 봐요.</p>
+<pre>SELECT COUNT(*) AS overdue_in_view FROM v_open_risks WHERE is_overdue = 1;</pre>
+<pre class="out">hostname    | cve_id        | cvss_score | status      | due_date   | days_overdue | assignee
+web-prod-01 | CVE-0000-0001 |        9.8 | open        | 2026-11-12 |           10 | 김보안
+web-prod-01 | CVE-0000-0002 |        7.5 | in_progress | 2026-11-19 |            3 | 이서버
+
+overdue_in_view
+2</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>담당자 없는 건이 결과에서 사라짐</td><td><code>staff</code>를 그냥 JOIN</td><td>NULL 가능한 FK(<code>assignee_id</code>)는 LEFT JOIN</td></tr>
+            <tr><td>조인 후 행 수가 늘어남</td><td>조인 조건 누락·잘못된 컬럼</td><td>C-3처럼 조인을 하나씩 붙이며 행 수 확인</td></tr>
+            <tr><td>ERROR 1052 (23000): Column 'system_id' in field list is ambiguous</td><td>조인한 두 테이블에 같은 컬럼명이 있음</td><td><code>sv.system_id</code>처럼 테이블 별칭을 붙이기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>완성 쿼리는 <a href="#step-5">5단계</a> 형식으로 <code>sql/analysis_queries.sql</code>에, 손 계산 결과는 <a href="#step-6">6단계</a>의 검증표에 적어요.</p>
+    </section>
+
+    <!-- STEP 3 -->
+    <section class="panel step" id="step-3">
+      <h2><span class="step-no">3</span>분석 질문 7개 설계와 뼈대</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>sql/analysis_queries.sql</code>에 들어갈 질문 7개의 쿼리. 질문 4, 5는 완성 쿼리를 주고, 나머지는 <code>/* 여기에 … */</code> 빈칸을 채우는 뼈대예요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>채점 기준 3의 "다양성"은 같은 기능을 반복하지 않고 JOIN·LEFT JOIN·GROUP BY·HAVING·CASE·서브쿼리를 골고루 쓰는 걸로 보여줘요. 아래 표의 "SQL 기능" 열이 겹치지 않게 짠 거예요.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>질문</th><th>테이블과 조인 경로</th><th>SQL 기능</th><th>주의할 점</th><th>seed 기댓값</th></tr></thead>
+          <tbody>
+            <tr><td>Q1 특정 서버의 취약점</td><td>sv → systems, software, vulnerabilities, staff(LEFT)</td><td>JOIN 4개, 파라미터</td><td>CVSS NULL 정렬 위치</td><td>web-prod-01: 4행</td></tr>
+            <tr><td>Q2 CVSS N점 이상 미해결 + 서버·담당자</td><td>sv → vulnerabilities, systems, staff(LEFT)</td><td>WHERE 범위, 파라미터</td><td>NULL 점수는 빠짐 (명시하기)</td><td>N=7.0: 2행</td></tr>
+            <tr><td>Q3 미해결이 있는 서버 수</td><td>sv (+ systems)</td><td>COUNT(DISTINCT), HAVING + 서브쿼리</td><td>COUNT(*)와 구분</td><td>2대 / 평균 초과 서버 1대</td></tr>
+            <tr><td>Q4 Apache vs OpenSSH 분포</td><td>software → cve_package_status(LEFT) → vulnerabilities(LEFT)</td><td>GROUP BY, CASE식 SUM, AVG</td><td>릴리스 조건은 ON에</td><td>Apache 3건 / OpenSSH 2건</td></tr>
+            <tr><td>Q5 기한 초과 미해결 + 담당자</td><td><a href="#step-2">2단계</a>에서 완성</td><td>DATEDIFF, COALESCE</td><td>기한 NULL 제외</td><td>2행</td></tr>
+            <tr><td>Q6 서버별 패치 완료율</td><td>systems → sv(LEFT)</td><td>LEFT JOIN + GROUP BY, NULLIF</td><td>0건 서버, risk_accepted 처리</td><td>0.0 / 33.3 / 100.0</td></tr>
+            <tr><td>Q7 기간별 완료 건수</td><td>sv</td><td>DATE(), 날짜 범위, GROUP BY</td><td>DATETIME 범위는 반열린 구간</td><td>최근 30일: 3일 × 1건</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">③ 코드</h3>
+      <p><strong>완성 쿼리 — Q4 Apache vs OpenSSH 취약점 수·위험도 분포</strong></p>
+<pre>-- 24.04 기준으로 소프트웨어별 CVE 수와 CVSS 구간별 개수
+SELECT
+  sw.name                                                AS software,
+  COUNT(DISTINCT cps.cve_id)                             AS cve_count,
+  ROUND(AVG(v.cvss_score), 2)                            AS avg_cvss,
+  SUM(v.cvss_score &gt;= 9.0)                               AS critical_cnt,
+  SUM(v.cvss_score &gt;= 7.0 AND v.cvss_score &lt; 9.0)        AS high_cnt,
+  SUM(v.cvss_score &gt;= 4.0 AND v.cvss_score &lt; 7.0)        AS medium_cnt,
+  SUM(v.cvss_score &lt;  4.0)                               AS low_cnt,
+  SUM(v.cvss_score IS NULL)                              AS no_score_cnt
+FROM software sw
+LEFT JOIN cve_package_status cps
+       ON cps.software_id = sw.software_id AND cps.ubuntu_release = '24.04'
+LEFT JOIN vulnerabilities v ON v.cve_id = cps.cve_id
+GROUP BY sw.software_id, sw.name
+ORDER BY sw.name;</pre>
+<pre class="out">software           | cve_count | avg_cvss | critical_cnt | high_cnt | medium_cnt | low_cnt | no_score_cnt
+Apache HTTP Server |         3 |     6.47 |            1 |        0 |          2 |       0 |            0
+OpenSSH            |         2 |     7.50 |            0 |        1 |          0 |       0 |            1</pre>
+      <p><code>SUM(조건)</code>은 MySQL에서 조건이 참이면 1, 거짓이면 0이라 "조건에 맞는 개수"가 돼요. <code>CASE WHEN … THEN 1 ELSE 0 END</code>와 같은 뜻이니, 발표 자료에는 CASE 버전으로 바꿔 써도 돼요.</p>
+
+      <p style="margin-top:18px"><strong>뼈대 — Q1 특정 서버의 취약점</strong></p>
+<pre>SET @hostname = 'web-prod-01';
+SELECT s.hostname, sw.name AS software, sv.cve_id, v.cvss_score,
+       sv.status, st.name AS assignee, sv.due_date
+FROM system_vulnerabilities sv
+JOIN systems s          ON /* 여기에 조인 조건 */
+JOIN software sw        ON /* 여기에 조인 조건 */
+JOIN vulnerabilities v  ON /* 여기에 조인 조건 */
+LEFT JOIN staff st      ON /* 여기에 조인 조건 */
+WHERE /* 여기에 조건: 호스트명이 @hostname */
+ORDER BY /* 여기에: CVSS 높은 순, 점수 없는 건(NULL)은 맨 뒤 */;</pre>
+      <p><strong>뼈대 — Q2 CVSS N점 이상인 미해결 취약점과 서버·담당자</strong></p>
+<pre>SET @min_cvss = 7.0;
+SELECT v.cve_id, v.cvss_score, s.hostname, sv.status,
+       COALESCE(st.name, '(미배정)') AS assignee
+FROM system_vulnerabilities sv
+JOIN vulnerabilities v ON v.cve_id = sv.cve_id
+JOIN systems s         ON s.system_id = sv.system_id
+LEFT JOIN staff st     ON st.staff_id = sv.assignee_id
+WHERE /* 여기에 조건: 미해결 */
+  AND /* 여기에 조건: 점수가 @min_cvss 이상 */
+ORDER BY v.cvss_score DESC, s.hostname;
+-- 점수 없는 CVE를 포함할지 말지 정하고, 그 결정을 주석으로 남기기</pre>
+      <p><strong>뼈대 — Q3 미해결 취약점이 있는 서버 수 (+ HAVING·서브쿼리 확장)</strong></p>
+<pre>-- (가) 서버 수 하나
+SELECT /* 여기에: 서로 다른 서버 수 */ AS servers_with_open
+FROM system_vulnerabilities
+WHERE /* 여기에 조건: 미해결 */;
+
+-- (나) 미해결 건수가 "서버 평균"보다 많은 서버
+SELECT s.hostname, COUNT(*) AS unresolved
+FROM system_vulnerabilities sv
+JOIN systems s ON s.system_id = sv.system_id
+WHERE sv.status IN ('open', 'in_progress')
+GROUP BY s.system_id, s.hostname
+HAVING COUNT(*) &gt; (
+  SELECT AVG(cnt) FROM (
+    SELECT /* 여기에: 서버별 미해결 건수 */ AS cnt
+    FROM system_vulnerabilities
+    WHERE /* 여기에 조건 */
+    GROUP BY /* 여기에 */
+  ) t
+);</pre>
+      <p><strong>뼈대 — Q6 서버별 패치 완료율</strong></p>
+<pre>SELECT s.hostname,
+       COUNT(sv.sv_id)                AS total,
+       SUM(sv.status = 'patched')     AS patched,
+       ROUND(100 * SUM(sv.status = 'patched') / /* 여기에: 0으로 나누기 방지 */, 1) AS patch_rate_pct
+FROM systems s
+LEFT JOIN system_vulnerabilities sv ON /* 여기에 조인 조건 */
+GROUP BY s.system_id, s.hostname
+ORDER BY patch_rate_pct;
+-- 다 쓰면 ①의 뷰 v_system_patch_rate와 숫자가 같은지 비교 (검증표에 기록)</pre>
+      <p><strong>뼈대 — Q7 기간별 완료된 조치 건수</strong></p>
+<pre>SET @from = CURDATE() - INTERVAL 30 DAY;
+SET @to   = CURDATE() + INTERVAL 1 DAY;   -- 오늘 하루 전체를 포함하려고 "내일 0시 미만"
+SELECT DATE(patched_at) AS day, COUNT(*) AS patched_cnt
+FROM system_vulnerabilities
+WHERE status = 'patched'
+  AND /* 여기에 조건: patched_at이 @from 이상, @to 미만 */
+GROUP BY /* 여기에 */
+ORDER BY day;</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>빈칸을 채운 뒤 위 표의 "seed 기댓값"과 행 수·숫자가 같은지 확인해요. 다르면 <a href="#step-2">2단계</a>처럼 조건을 하나씩 빼 보면서 어디서 달라지는지 찾아요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>Q4에서 Apache 행이 아예 안 나옴</td><td><code>ubuntu_release = '24.04'</code>를 WHERE에 둠 + 해당 데이터 없음</td><td>LEFT JOIN 대상의 조건은 ON에 쓰기 (<a href="#step-4">4단계</a> 참고)</td></tr>
+            <tr><td>ERROR 1055 (42000): Expression #2 of SELECT list is not in GROUP BY clause and contains nonaggregated column …</td><td>SELECT에 쓴 컬럼이 GROUP BY에 없음</td><td>SELECT의 집계 안 한 컬럼을 GROUP BY에 모두 넣기</td></tr>
+            <tr><td>Q6 완료율이 뷰와 다름</td><td>risk_accepted를 분모에서 뺐거나 0건 서버를 제외</td><td>뷰 정의(<code>db/schema.sql</code> 맨 아래)와 같은 정의인지 확인. 정의를 바꾸려면 ①과 상의</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>질문 7개를 11/23 회의에서 확정하고, 스키마로 답할 수 없는 질문이 있으면 ①에게 알려요. 완성된 쿼리는 <a href="#step-7">7단계</a>에서 catalog로 ③에게 넘어가요.</p>
+    </section>
+
+    <!-- STEP 4 -->
+    <section class="panel step" id="step-4">
+      <h2><span class="step-no">4</span>이 프로젝트에서 틀리기 쉬운 부분</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>아래 예시 쿼리를 직접 돌려 보고, 각 분석 쿼리가 어느 쪽을 택했는지 <code>analysis_queries.sql</code> 주석에 적어요. 집계 단위 비교(4-1)는 그 자체로 발표 슬라이드 한 장이 돼요.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>문법은 맞는데 숫자가 틀리는 쿼리는 에러가 안 나서 더 위험해요. 우리 데이터에는 NULL 점수, 담당자 없는 건, 조치 건이 없는 서버가 일부러 들어 있어서 이 함정이 실제로 드러나요.</p>
+      <h3 class="part">③ 코드</h3>
+      <p><strong>4-1. 집계 단위 — "취약점 몇 개?"의 답이 세 가지</strong></p>
+<pre>SELECT
+  COUNT(*)                  AS sv_rows,          -- 조치 건 수 (서버×CVE)
+  COUNT(DISTINCT cve_id)    AS distinct_cves,    -- 서로 다른 CVE 수
+  COUNT(DISTINCT system_id) AS affected_servers  -- 영향받는 서버 수
+FROM system_vulnerabilities;</pre>
+<pre class="out">sv_rows | distinct_cves | affected_servers
+      9 |             5 |                3</pre>
+      <p><strong>4-2. CVSS NULL — WHERE와 AVG에서 조용히 빠짐</strong></p>
+<pre>SELECT
+  COUNT(*)                               AS all_rows,
+  COUNT(cvss_score)                      AS rows_with_score,
+  ROUND(AVG(cvss_score), 2)              AS avg_ignoring_null,   -- NULL 행은 분모에서도 빠짐
+  ROUND(AVG(COALESCE(cvss_score, 0)), 2) AS avg_null_as_zero     -- NULL을 0점으로 (보통 틀린 선택)
+FROM vulnerabilities;
+
+SELECT cve_id, cvss_score FROM vulnerabilities WHERE cvss_score &lt; 7.0;                       -- 2행
+SELECT cve_id, cvss_score FROM vulnerabilities WHERE cvss_score &lt; 7.0 OR cvss_score IS NULL; -- 3행</pre>
+<pre class="out">all_rows | rows_with_score | avg_ignoring_null | avg_null_as_zero
+       5 |               4 |              6.73 |             5.38
+
+CVE-0000-0003 | 5.3
+CVE-0000-0005 | 4.3
+
+CVE-0000-0003 | 5.3
+CVE-0000-0004 | NULL
+CVE-0000-0005 | 4.3</pre>
+      <p><strong>4-3. LEFT JOIN — 조치 건이 0인 서버도 나오게</strong></p>
+<pre>-- 틀림: LEFT JOIN 했지만 오른쪽 테이블 조건을 WHERE에 써서 INNER JOIN처럼 됨
+SELECT s.hostname, COUNT(sv.sv_id) AS unresolved
+FROM systems s
+LEFT JOIN system_vulnerabilities sv ON sv.system_id = s.system_id
+WHERE sv.status IN ('open', 'in_progress')
+GROUP BY s.system_id, s.hostname;
+
+-- 맞음: 오른쪽 테이블 조건을 ON으로
+SELECT s.hostname, COUNT(sv.sv_id) AS unresolved
+FROM systems s
+LEFT JOIN system_vulnerabilities sv
+       ON sv.system_id = s.system_id
+      AND sv.status IN ('open', 'in_progress')
+GROUP BY s.system_id, s.hostname;</pre>
+<pre class="out">-- 틀린 쿼리: dev-01이 사라짐
+web-prod-01 | 4
+web-prod-02 | 1
+-- 맞는 쿼리: dev-01이 0으로 나옴
+dev-01      | 0
+web-prod-01 | 4
+web-prod-02 | 1</pre>
+      <p><strong>4-4. 완료율의 0으로 나누기</strong></p>
+<pre>SELECT 3 / 0 AS plain_div, 3 / NULLIF(0, 0) AS with_nullif;</pre>
+<pre class="out">plain_div | with_nullif
+NULL      | NULL</pre>
+      <p>MySQL의 SELECT는 0으로 나누면 에러 대신 NULL을 내요. 그래도 <code>NULLIF(COUNT(…), 0)</code>를 쓰는 이유는 "조치 건이 0인 서버는 완료율이 없다(NULL)"는 <strong>의도를 쿼리에 드러내기</strong> 위해서예요. ①의 뷰도 같은 방식이고, ③은 NULL을 0%가 아니라 빈칸으로 보여줘요.</p>
+      <p><strong>4-5. 날짜 비교</strong></p>
+<pre>-- due_date는 DATE, detected_at·patched_at은 DATETIME
+-- DATETIME에 BETWEEN '…-01' AND '…-30'을 쓰면 30일 0시 이후가 빠짐
+SELECT CAST('2026-11-30 15:00:00' AS DATETIME) BETWEEN '2026-11-01' AND '2026-11-30' AS between_result,
+       (CAST('2026-11-30 15:00:00' AS DATETIME) &gt;= '2026-11-01'
+        AND CAST('2026-11-30 15:00:00' AS DATETIME) &lt; '2026-12-01')            AS half_open_result;
+
+-- 기한 초과 일수: DATEDIFF(큰 날짜, 작은 날짜)
+SELECT sv_id, due_date, DATEDIFF(CURDATE(), due_date) AS days_overdue
+FROM system_vulnerabilities WHERE due_date &lt; CURDATE();</pre>
+<pre class="out">between_result | half_open_result
+             0 |                1</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>위 출력과 같은 숫자가 나오면 돼요. 특히 4-1의 9 / 5 / 3은 seed 주석의 표(조치 건 9개, CVE 5종, 서버 3대)와 맞아야 해요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td><code>WHERE cvss_score = NULL</code>이 0행</td><td>NULL은 =로 비교 안 됨</td><td><code>IS NULL</code> / <code>IS NOT NULL</code></td></tr>
+            <tr><td>"오늘 완료된 건"이 0건</td><td><code>patched_at = CURDATE()</code>는 0시 정각만 맞음</td><td><code>DATE(patched_at) = CURDATE()</code> 또는 반열린 구간</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>NULL을 어떻게 처리했는지(포함/제외)를 catalog의 <code>description</code>에 한 줄로 적어 ③에게 넘겨요. ③은 그 문장을 화면 설명으로 그대로 써요.</p>
+    </section>
+
+    <!-- STEP 5 -->
+    <section class="panel step" id="step-5">
+      <h2><span class="step-no">5</span>analysis_queries.sql 작성 규칙</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>sql/analysis_queries.sql</code> — 질문마다 아래 머리 주석 + 쿼리 한 개.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>파일 하나만 열어도 "무슨 질문을, 어떤 SQL 기능으로, 어떤 결과로" 풀었는지 보이게 해요. 발표 자료와 검증표, catalog가 모두 이 파일의 질문 번호를 기준으로 연결돼요. 파라미터는 <code>SET @변수</code>로 두면 Workbench에서 바로 실행되고, catalog로 옮길 때 <code>%(변수)s</code>로만 바꾸면 돼요.</p>
+      <h3 class="part">③ 코드</h3>
+<pre>-- =====================================================================
+-- vuln_mgmt 분석 쿼리 (담당: ②)
+-- 실행: docker compose exec -T db mysql --default-character-set=utf8mb4 \
+--         -u vuln_app -p vuln_mgmt &lt; sql/analysis_queries.sql
+-- 기준 데이터: db/seed.sql (가짜 데이터)
+-- =====================================================================
+USE vuln_mgmt;
+
+-- ---------------------------------------------------------------------
+-- Q5. 처리 기한을 넘긴 미해결 건과 담당자는?
+-- 사용 기능: JOIN 2개 + LEFT JOIN(담당자 없음), DATEDIFF, COALESCE, ORDER BY 2단
+-- NULL 처리: 기한(due_date)이 NULL인 건은 "기한 없음"이라 제외
+-- 파라미터: 없음
+-- catalog id: q5_overdue_open
+-- seed 기댓값: 2행 (sv 1, sv 2)
+-- ---------------------------------------------------------------------
+SELECT
+  s.hostname,
+  sv.cve_id,
+  v.cvss_score,
+  sv.status,
+  sv.due_date,
+  DATEDIFF(CURDATE(), sv.due_date) AS days_overdue,
+  COALESCE(st.name, '(미배정)')     AS assignee
+FROM system_vulnerabilities sv
+JOIN systems         s  ON s.system_id = sv.system_id
+JOIN vulnerabilities v  ON v.cve_id    = sv.cve_id
+LEFT JOIN staff      st ON st.staff_id = sv.assignee_id
+WHERE sv.status IN ('open', 'in_progress')
+  AND sv.due_date &lt; CURDATE()
+ORDER BY days_overdue DESC, v.cvss_score DESC;</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>Windows PowerShell은 <code>&lt;</code> 리다이렉트를 지원하지 않아서, 파일 전체를 실행할 때는 Workbench/DBeaver에서 파일을 열고 "Execute script"를 쓰는 게 편해요. 터미널(macOS·Linux·Git Bash)이라면 위 머리 주석의 명령을 그대로 쓰면 돼요. 질문마다 결과표가 하나씩 나오고, 에러 없이 끝나면 성공이에요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>앞 쿼리 결과가 뒤 쿼리에 영향</td><td>앞에서 <code>SET @min_cvss</code>를 바꿔 놓음</td><td>질문마다 쿼리 바로 위에서 <code>SET</code>을 다시 하기</td></tr>
+            <tr><td>파일 실행이 중간에 멈춤</td><td>쿼리 끝 <code>;</code> 누락</td><td>질문 하나가 끝날 때마다 <code>;</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>머리 주석의 "사용 기능"은 발표의 "SQL 다양성" 슬라이드에 그대로 옮겨요.</p>
+    </section>
+
+    <!-- STEP 6 -->
+    <section class="panel step" id="step-6">
+      <h2><span class="step-no">6</span>결과 검증과 검증표</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>docs/query_validation.md</code> — 질문마다 손 계산 기댓값과 쿼리 결과를 나란히 적은 표.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>"쿼리가 에러 없이 돌았다"는 정확성의 근거가 못 돼요. seed는 행이 9개뿐이라 손으로 셀 수 있어요. 손 계산과 쿼리 결과가 같다는 표가 채점 기준 3(정확성)의 가장 강한 증거예요.</p>
+      <h3 class="part">③ 양식</h3>
+<pre># 분석 쿼리 검증표
+
+- 기준 데이터: db/seed.sql (가짜 데이터, 조치 건 9개)
+- 실행일: 2026-11-25 / MySQL 8.0.46
+
+| 질문 | 손으로 계산한 기댓값 | 근거 (seed 주석 표의 행) | 쿼리 결과 | 일치 |
+|---|---|---|---|---|
+| Q5 기한 초과 미해결 | 2행: CVE-0000-0001(10일, 김보안), CVE-0000-0002(3일, 이서버) | 기한 지남: sv1(open), sv2(in_progress), sv5(patched → 제외) / 기한 없음: sv4, sv6, sv9 | 2행, 값 동일 | ✅ |
+| Q6 서버별 완료율 | web-prod-01 0.0, web-prod-02 33.3, dev-01 100.0 | web-prod-02: 3건 중 patched 1건 (risk_accepted 1건은 분모에 포함) | 0.0 / 33.3 / 100.0 | ✅ |
+| Q6 vs 뷰 | v_system_patch_rate와 같음 | 같은 정의 | 같음 | ✅ |</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>표의 모든 행이 ✅이면 끝이에요. ❌가 있으면 "기댓값이 틀렸는지, 쿼리가 틀렸는지"를 적고 고친 뒤 다시 실행해요. 둘 중 무엇이 틀렸었는지도 남겨 두면 발표의 "문제 해결 과정"이 돼요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>날짜 관련 결과가 어제와 다름</td><td>seed 날짜가 <code>CURDATE()</code> 기준 상대값</td><td>날짜 대신 "N일 전" 같은 상대값으로 기댓값을 적기</td></tr>
+            <tr><td>팀원과 결과가 다름</td><td>한쪽 DB에 실험 데이터가 남음</td><td>둘 다 <code>docker compose down -v</code> 후 다시 적재</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>검증이 끝난 쿼리만 catalog에 넣어요. ③은 "검증된 쿼리"만 화면에 쓰게 돼요.</p>
+    </section>
+
+    <!-- STEP 7 -->
+    <section class="panel step" id="step-7">
+      <h2><span class="step-no">7</span>query_catalog.json 만들기</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>sql/query_catalog.json</code> — 검증된 쿼리를 id·제목·설명·SQL·파라미터와 함께 담은 파일.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>③은 이 파일을 <strong>그대로 읽어서</strong> 실행해요(③ 가이드 4단계의 <code>app/queries.py</code>). SQL을 앱 코드에 복사하지 않으니 "SQL 결과와 화면 숫자가 다르다"는 일이 생기지 않고, 쿼리를 고칠 때도 이 파일만 고치면 돼요. 파라미터를 <code>%(이름)s</code> 자리로 두는 건 ③이 값을 문자열로 이어 붙이지 않게(SQL Injection 방지) 하기 위해서예요.</p>
+      <h3 class="part">③ 양식과 예시</h3>
+<pre>{
+  "version": 1,
+  "queries": [
+    {
+      "id": "q5_overdue_open",
+      "title": "기한을 넘긴 미해결 조치 건",
+      "description": "조치 기한이 지났는데 아직 open/in_progress인 건과 담당자. 기한이 없는 건은 제외.",
+      "sql": "SELECT s.hostname, sv.cve_id, v.cvss_score, sv.status, sv.due_date, DATEDIFF(CURDATE(), sv.due_date) AS days_overdue, COALESCE(st.name, '(미배정)') AS assignee FROM system_vulnerabilities sv JOIN systems s ON s.system_id = sv.system_id JOIN vulnerabilities v ON v.cve_id = sv.cve_id LEFT JOIN staff st ON st.staff_id = sv.assignee_id WHERE sv.status IN ('open', 'in_progress') AND sv.due_date &lt;= CURDATE() - INTERVAL %(min_days_overdue)s DAY ORDER BY days_overdue DESC, v.cvss_score DESC",
+      "params": [
+        {"name": "min_days_overdue", "label": "최소 초과 일수", "type": "int", "default": 1}
+      ]
+    }
+  ]
+}</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>필드</th><th>규칙</th></tr></thead>
+          <tbody>
+            <tr><td><code>id</code></td><td><code>q번호_짧은영문</code>. 한 번 정하면 바꾸지 않기 (③ 코드가 id로 찾음)</td></tr>
+            <tr><td><code>title</code> / <code>description</code></td><td>화면에 그대로 나가는 문장. description에 NULL 처리 방식 한 줄</td></tr>
+            <tr><td><code>sql</code></td><td>한 줄 문자열. <code>SET @변수</code> 대신 <code>%(변수)s</code>. 끝에 <code>;</code> 없이</td></tr>
+            <tr><td><code>params</code></td><td><code>name</code>(SQL의 이름과 같게), <code>label</code>(화면 표시), <code>type</code>(<code>int</code>/<code>float</code>/<code>str</code>/<code>date</code>), <code>default</code></td></tr>
+            <tr><td>SQL 안의 <code>%</code></td><td>파라미터가 있는 쿼리에서 <code>LIKE '%x'</code>, <code>DATE_FORMAT(…, '%Y')</code>의 <code>%</code>는 <code>%%</code>로 두 번</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>JSON 문법 확인 → 실제로 실행되는지 확인. 레포 루트에서 (③의 <code>app/db.py</code>가 있으면):</p>
+<pre>python -m json.tool sql/query_catalog.json     # 문법이 틀리면 에러 위치를 알려 줌
+cd app
+python -c "from queries import run_query; print(run_query('q5_overdue_open'))"</pre>
+<pre class="out">      hostname         cve_id  ...  days_overdue assignee
+0  web-prod-01  CVE-0000-0001  ...            10      김보안
+1  web-prod-01  CVE-0000-0002  ...             3      이서버
+
+[2 rows x 7 columns]</pre>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ValueError: unsupported format character 'Y' (0x59) at index 28</td><td>파라미터 있는 SQL 안에 <code>%Y</code> 같은 <code>%</code>가 그대로 있음</td><td><code>%%Y</code>로 바꾸기</td></tr>
+            <tr><td>KeyError: 'min_cvss'</td><td>SQL의 <code>%(min_cvss)s</code>와 params의 <code>name</code>이 다름</td><td>철자를 똑같이</td></tr>
+            <tr><td>json.decoder.JSONDecodeError</td><td>SQL 안의 큰따옴표, 마지막 항목 뒤 쉼표</td><td>SQL 문자열 값은 작은따옴표만 쓰기, 끝 쉼표 지우기</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>③</strong>: 이 파일을 main에 머지하고 단톡에 "catalog id 목록"을 알려 주세요. ③은 분석 화면에서 이 파일의 쿼리를 드롭다운으로 보여줘요. (여유 되면 LLM도 이 id 중에서만 고르게 돼요.)</p>
+    </section>
+
+    <!-- STEP 8 -->
+    <section class="panel step" id="step-8">
+      <h2><span class="step-no">8</span>성능: 대량 데이터와 기준 측정</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>sql/benchmark.py</code>와 인덱스 없는 상태의 측정 결과(before).</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>seed 9행으로는 인덱스가 있든 없든 0ms라 비교가 안 돼요. ④가 만든 수만 건 데이터에서 "인덱스 없음 → 있음"을 같은 조건으로 재야 채점 기준 3의 <strong>효율성</strong>을 숫자로 보여줄 수 있어요. 한 번만 재면 우연이 섞이니 여러 번 재서 평균을 내요.</p>
+      <h3 class="part">③ 코드</h3>
+      <p><strong>8-1. 대량 데이터 적재 확인</strong> — ④의 스크립트를 내 DB에서 직접 실행해요 (④ 가이드 <a href="../04-data/guide.html#step-9">9단계</a>).</p>
+<pre>python data/generate_synthetic.py --mode bench --servers 20000</pre>
+<pre>SELECT COUNT(*) FROM system_vulnerabilities;
+SELECT status, COUNT(*) FROM system_vulnerabilities GROUP BY status;
+ANALYZE TABLE system_vulnerabilities;   -- 통계를 새로 계산해야 EXPLAIN의 rows가 정확해요</pre>
+<pre class="out">COUNT(*)
+40124
+
+status        | COUNT(*)
+patched       |    31877
+open          |     4295
+in_progress   |     2278
+risk_accepted |     1674</pre>
+      <p>(검증할 때 실제 CVE 6건으로 만든 수치예요. 우리 CVE 수에 따라 달라져요.)</p>
+      <p style="margin-top:14px"><strong>8-2. 측정 스크립트 <code>sql/benchmark.py</code></strong></p>
+<pre>"""쿼리를 여러 번 실행해서 평균 실행 시간을 잰다.
+
+실행: python sql/benchmark.py --label before --repeat 20
+출력: docs/performance.md 표에 그대로 붙일 수 있는 마크다운 행
+"""
+import argparse
+import os
+import statistics
+import time
+from pathlib import Path
+
+import pymysql
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
+# 측정할 쿼리. 이름: SQL
+QUERIES = {
+    # 결과 행이 많으면 "결과를 받아 오는 시간"이 대부분이 되어 인덱스 효과가 가려진다.
+    # 그래서 같은 조건을 COUNT(*)로 세어서 DB가 행을 찾는 시간만 비교한다.
+    "Q5 기한 초과 미해결 (COUNT)": """
+        SELECT COUNT(*)
+        FROM system_vulnerabilities sv
+        WHERE sv.status IN ('open', 'in_progress') AND sv.due_date &lt; CURDATE()""",
+    "서버별 미해결 수 (JOIN + GROUP BY)": """
+        SELECT s.system_id, s.hostname, COUNT(sv.sv_id) AS unresolved
+        FROM systems s
+        LEFT JOIN system_vulnerabilities sv
+               ON sv.system_id = s.system_id AND sv.status IN ('open', 'in_progress')
+        GROUP BY s.system_id, s.hostname""",
+    "서버별 미해결 수 (상관 서브쿼리)": """
+        SELECT s.system_id, s.hostname,
+               (SELECT COUNT(*) FROM system_vulnerabilities sv
+                 WHERE sv.system_id = s.system_id AND sv.status IN ('open', 'in_progress')) AS unresolved
+        FROM systems s""",
+}
+
+
+def connect():
+    return pymysql.connect(
+        host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+        port=int(os.getenv("MYSQL_PORT", "3306")),
+        user=os.getenv("MYSQL_USER"),
+        password=os.getenv("MYSQL_PASSWORD"),
+        database=os.getenv("MYSQL_DATABASE", "vuln_mgmt"),
+        charset="utf8mb4",
+    )
+
+
+def measure(cur, sql, repeat):
+    cur.execute(sql)          # 첫 실행은 버리기 (데이터가 메모리에 올라오는 시간 제외)
+    cur.fetchall()
+    times = []
+    for _ in range(repeat):
+        start = time.perf_counter()
+        cur.execute(sql)
+        rows = cur.fetchall()   # 결과를 다 받아 와야 실제 실행이 끝난 것
+        times.append((time.perf_counter() - start) * 1000)
+    return len(rows), statistics.mean(times), min(times), max(times)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True, help="예: before, after-idx1")
+    parser.add_argument("--repeat", type=int, default=20)
+    args = parser.parse_args()
+
+    conn = connect()
+    with conn.cursor() as cur:
+        cur.execute("SELECT VERSION()")
+        version = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM system_vulnerabilities")
+        sv_count = cur.fetchone()[0]
+        print(f"MySQL {version}, system_vulnerabilities {sv_count}행, 반복 {args.repeat}회\n")
+        print("| 쿼리 | 조건 | 결과 행 | 평균(ms) | 최소(ms) | 최대(ms) |")
+        print("|---|---|---|---|---|---|")
+        for name, sql in QUERIES.items():
+            rows, avg, mn, mx = measure(cur, sql, args.repeat)
+            print(f"| {name} | {args.label} | {rows} | {avg:.2f} | {mn:.2f} | {mx:.2f} |")
+    conn.close()
+
+
+if __name__ == "__main__":
+    main()</pre>
+      <p style="margin-top:14px"><strong>8-3. 실행 계획 보기</strong> — 측정과 같은 쿼리에 <code>EXPLAIN</code>, <code>EXPLAIN ANALYZE</code>를 붙여요.</p>
+<pre>EXPLAIN
+SELECT s.hostname, sv.cve_id, sv.due_date
+FROM system_vulnerabilities sv
+JOIN systems s ON s.system_id = sv.system_id
+WHERE sv.status IN ('open', 'in_progress') AND sv.due_date &lt; CURDATE()
+ORDER BY sv.due_date;
+
+EXPLAIN ANALYZE
+SELECT s.hostname, sv.cve_id, sv.due_date
+FROM system_vulnerabilities sv
+JOIN systems s ON s.system_id = sv.system_id
+WHERE sv.status IN ('open', 'in_progress') AND sv.due_date &lt; CURDATE()
+ORDER BY sv.due_date\G</pre>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>EXPLAIN 항목</th><th>이 프로젝트에서 볼 것</th></tr></thead>
+          <tbody>
+            <tr><td><code>type</code></td><td><code>ALL</code>(전체 스캔) → <code>range</code>/<code>ref</code>로 바뀌는지</td></tr>
+            <tr><td><code>key</code></td><td>실제로 쓴 인덱스 이름. NULL이면 인덱스를 안 씀</td></tr>
+            <tr><td><code>rows</code></td><td>읽을 것으로 예상한 행 수. 줄어드는 만큼이 효과</td></tr>
+            <tr><td><code>Extra</code></td><td><code>Using filesort</code>(정렬을 따로 함), <code>Using index</code>(인덱스만 읽음)</td></tr>
+            <tr><td>EXPLAIN ANALYZE의 <code>actual time</code></td><td>각 단계 실제 시간(ms). 맨 위 줄의 두 번째 숫자가 전체 시간</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python sql/benchmark.py --label before --repeat 20</pre>
+<pre class="out">MySQL 8.0.46, system_vulnerabilities 40124행, 반복 20회
+
+| 쿼리 | 조건 | 결과 행 | 평균(ms) | 최소(ms) | 최대(ms) |
+|---|---|---|---|---|---|
+| Q5 기한 초과 미해결 (COUNT) | before | 1 | 5.90 | 5.21 | 6.40 |
+| 서버별 미해결 수 (JOIN + GROUP BY) | before | 20000 | 89.47 | 84.92 | 96.65 |
+| 서버별 미해결 수 (상관 서브쿼리) | before | 20000 | 56.82 | 54.98 | 59.42 |</pre>
+<pre class="out">id | table | type   | possible_keys                               | key     | rows  | filtered | Extra
+1  | sv    | ALL    | uq_sv_system_cve,fk_sv_installed_software   | NULL    | 40064 |    16.66 | Using where; Using filesort
+1  | s     | eq_ref | PRIMARY                                     | PRIMARY |     1 |   100.00 | NULL</pre>
+      <p>시간 숫자는 PC마다 달라요. 중요한 건 <strong>같은 PC에서 before/after를 비교</strong>하는 거예요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>인덱스를 추가해도 시간이 거의 그대로</td><td>결과 행이 많아서 "결과를 받아 오는 시간"이 대부분</td><td>같은 조건을 <code>COUNT(*)</code>로 재거나 EXPLAIN ANALYZE의 actual time을 비교 (그래서 Q5는 COUNT로 잼)</td></tr>
+            <tr><td>EXPLAIN의 rows가 실제와 크게 다름</td><td>통계가 오래됨</td><td><code>ANALYZE TABLE system_vulnerabilities;</code></td></tr>
+            <tr><td>측정할 때마다 들쭉날쭉</td><td>다른 프로그램이 돌거나 첫 실행</td><td>첫 실행은 버리고(스크립트가 이미 함) 20회 이상 평균</td></tr>
+            <tr><td>RuntimeError: 'cryptography' package is required …</td><td>MySQL 8 인증에 필요한 패키지 없음</td><td><code>pip install cryptography</code> (③의 requirements.txt에 포함)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>before 결과는 <a href="#step-11">11단계</a>의 표에 붙여 넣어요. 측정 조건(행 수, MySQL 버전, 반복 횟수)은 스크립트가 첫 줄에 출력해 주니 같이 복사해요.</p>
+    </section>
+
+    <!-- STEP 9 -->
+    <section class="panel step" id="step-9">
+      <h2><span class="step-no">9</span>성능: 인덱스 추가와 재측정</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>내 로컬 DB에서 인덱스를 실험한 결과(after)와 <strong>추천 인덱스 목록</strong>.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>인덱스는 스키마의 일부라서 <code>db/schema.sql</code>은 ①만 고쳐요. ②는 로컬에서 실험하고 "이 인덱스를 넣으면 이만큼 빨라진다"는 근거와 함께 ①에게 추천해요.</p>
+      <p><strong>인덱스 후보를 고르는 기준</strong></p>
+      <ul>
+        <li>WHERE·JOIN·ORDER BY에 자주 나오는 컬럼. 우리 쿼리는 대부분 <code>status IN (…)</code>과 <code>due_date</code>를 같이 써요.</li>
+        <li>복합 인덱스 순서: <strong>= 또는 IN으로 비교하는 컬럼을 앞에</strong>, 범위(<code>&lt;</code>, BETWEEN)로 비교하는 컬럼을 뒤에 → <code>(status, due_date)</code>.</li>
+        <li><strong>이미 있는 인덱스는 빼기:</strong> InnoDB는 FK 컬럼에 인덱스를 자동으로 만들어요. <code>system_id</code>, <code>cve_id</code>, <code>assignee_id</code>, <code>updated_by</code>, <code>hostname</code>(UNIQUE)에는 이미 있어요. <code>SHOW INDEX FROM system_vulnerabilities;</code>로 확인.</li>
+        <li>작은 테이블(<code>vulnerabilities</code>는 CVE 10~15행)은 인덱스를 걸어도 효과가 없어요.</li>
+      </ul>
+      <h3 class="part">③ 코드</h3>
+<pre>-- 인덱스 추가 (내 로컬 DB에서만)
+CREATE INDEX idx_sv_status_due ON system_vulnerabilities (status, due_date);
+
+-- 실험을 되돌릴 때
+DROP INDEX idx_sv_status_due ON system_vulnerabilities;</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre>python sql/benchmark.py --label after-idx --repeat 20</pre>
+<pre class="out">| Q5 기한 초과 미해결 (COUNT) | after-idx | 1 | 1.46 | 1.33 | 1.70 |
+| 서버별 미해결 수 (JOIN + GROUP BY) | after-idx | 20000 | 85.23 | 81.30 | 95.61 |
+| 서버별 미해결 수 (상관 서브쿼리) | after-idx | 20000 | 54.57 | 50.55 | 62.28 |</pre>
+<pre class="out">id | table | type   | key               | rows | filtered | Extra
+1  | sv    | range  | idx_sv_status_due | 4271 |   100.00 | Using index condition; Using filesort
+1  | s     | eq_ref | PRIMARY           |    1 |   100.00 | NULL
+
+-&gt; Nested loop inner join  (cost=3417 rows=4271) (actual time=4.26..7.28 rows=4271 loops=1)
+    -&gt; Sort: sv.due_date  (actual time=4.25..4.5 rows=4271 loops=1)
+        -&gt; Index range scan on sv using idx_sv_status_due over (status = 'open' AND NULL &lt; due_date &lt; '2026-11-22') OR (status = 'in_progress' AND …)</pre>
+      <p>Q5는 <code>type ALL → range</code>, 읽는 행 <code>40064 → 4271</code>, 평균 <code>5.90ms → 1.46ms</code>(약 4배). 반면 "서버별 미해결 수"는 거의 그대로예요. 이 쿼리는 모든 서버를 다 읽어야 해서 인덱스가 도움이 안 되는 경우고, 이것도 발표에서 그대로 보여주면 좋아요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상 / 에러</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ERROR 1061: Duplicate key name 'idx_sv_status_due'</td><td>이미 만든 인덱스</td><td>DROP 후 다시 만들거나 그대로 측정</td></tr>
+            <tr><td><code>key</code>가 여전히 NULL</td><td>조건에 맞는 행이 너무 많아(전체의 수십 %) 옵티마이저가 전체 스캔을 택함</td><td>정상이에요. "선택도가 낮으면 인덱스를 안 쓴다"는 결과로 기록</td></tr>
+            <tr><td>(due_date, status)로 만들었더니 효과가 거의 없음</td><td>범위 조건 컬럼이 앞이면 뒤 컬럼으로 범위를 좁히지 못함. 검증 때 rows 20014, 5.24ms (vs (status, due_date) 4271행, 1.40ms)</td><td>= / IN 컬럼을 앞에. 두 순서를 모두 재서 비교표에 남기면 좋은 발표 자료가 돼요</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>①</strong>: "추천 인덱스: <code>CREATE INDEX …</code> / 근거: before·after 표" 형식으로 단톡이나 PR 설명에 남겨요. ①이 <code>db/schema.sql</code>에 반영할지 정해요.</p>
+    </section>
+
+    <!-- STEP 10 -->
+    <section class="panel step" id="step-10">
+      <h2><span class="step-no">10</span>성능: 쿼리 작성 방식 비교</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p>같은 질문을 두 가지 방식으로 쓴 쿼리 쌍과, 결과·시간 비교.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>"어떻게 써도 결과는 같다"가 아니라 <strong>결과가 달라지는 경우</strong>(NOT IN과 NULL)와 <strong>시간이 달라지는 경우</strong>(JOIN vs 상관 서브쿼리)를 직접 보여주면 SQL을 이해하고 쓴다는 근거가 돼요.</p>
+      <h3 class="part">③ 코드</h3>
+      <p><strong>10-1. JOIN + GROUP BY vs 상관 서브쿼리</strong> — <code>benchmark.py</code>의 <code>QUERIES</code>에 이미 두 버전이 들어 있어요. 결과 행 수(20000)가 같은지 먼저 보고 시간을 비교해요.</p>
+      <p><strong>10-2. NOT IN vs NOT EXISTS</strong> — "맡은 건이 하나도 없는 담당자"를 찾을 때. 데이터를 건드리니 트랜잭션 안에서 하고 ROLLBACK해요.</p>
+<pre>START TRANSACTION;
+INSERT INTO staff (staff_id, name, team, email)
+VALUES (99, '임시담당', '테스트', 'temp@example.com');    -- 맡은 건이 없는 담당자
+
+-- NOT IN: assignee_id에 NULL이 하나라도 있으면 결과가 0행이 됨
+SELECT COUNT(*) AS not_in_rows
+FROM staff
+WHERE staff_id NOT IN (SELECT assignee_id FROM system_vulnerabilities);
+
+-- NOT EXISTS: NULL과 상관없이 의도대로
+SELECT COUNT(*) AS not_exists_rows
+FROM staff st
+WHERE NOT EXISTS (SELECT 1 FROM system_vulnerabilities sv WHERE sv.assignee_id = st.staff_id);
+
+-- NOT IN을 고친 버전
+SELECT COUNT(*) AS not_in_fixed
+FROM staff
+WHERE staff_id NOT IN (SELECT assignee_id FROM system_vulnerabilities WHERE assignee_id IS NOT NULL);
+
+ROLLBACK;</pre>
+      <h3 class="part">④ 확인 방법</h3>
+<pre class="out">not_in_rows
+0
+not_exists_rows
+1
+not_in_fixed
+1</pre>
+      <p>10-1은 검증할 때 상관 서브쿼리(약 55ms)가 JOIN + GROUP BY(약 85ms)보다 <strong>빨랐어요</strong>. 서브쿼리가 서버마다 <code>system_id</code> 인덱스로 바로 찾아가기 때문이에요. "서브쿼리는 느리다"는 통념과 다르게 나올 수 있으니, <strong>추측하지 말고 재서 확인한다</strong>는 걸 결론으로 쓰면 돼요. 두 쿼리에 <code>EXPLAIN</code>을 붙여 차이의 이유도 캡처해 두세요.</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>ROLLBACK 후에도 임시 담당자가 남음</td><td>GUI 도구가 자동 커밋(autocommit) 모드</td><td>Workbench/DBeaver에서 자동 커밋을 끄거나, 터미널에서 실행</td></tr>
+            <tr><td>두 방식의 결과 행 수가 다름</td><td>비교가 성립 안 함 (한쪽이 틀린 쿼리)</td><td>시간 비교 전에 결과가 같은지 먼저 확인</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>NOT IN 함정은 ③에게도 알려 주세요. 화면용 쿼리에도 같은 실수가 생길 수 있어요.</p>
+    </section>
+
+    <!-- STEP 11 -->
+    <section class="panel step" id="step-11">
+      <h2><span class="step-no">11</span>performance.md 정리</h2>
+      <h3 class="part">① 이 단계에서 만드는 것</h3>
+      <p><code>docs/performance.md</code> — 발표 슬라이드에 그대로 붙일 수 있는 비교표와 결론.</p>
+      <h3 class="part">② 왜 이렇게 하나</h3>
+      <p>측정 조건이 없는 숫자는 근거가 못 돼요. "어떤 데이터 크기에서, 무엇을 바꿨더니, 실행 계획이 어떻게 바뀌고, 몇 배 빨라졌다"를 한 표에 모아요.</p>
+      <h3 class="part">③ 양식</h3>
+<pre># 쿼리 성능 분석
+
+## 측정 조건
+- 데이터: generate_synthetic.py --mode bench --servers 20000 → system_vulnerabilities 40,124행
+- MySQL 8.0.46 (Docker), 같은 PC, 쿼리마다 첫 실행 제외 20회 평균
+- 측정 도구: sql/benchmark.py
+
+## 1. 인덱스 전후 (Q5 기한 초과 미해결)
+| 조건 | type | key | rows(예상) | 평균(ms) | 개선 |
+|---|---|---|---|---|---|
+| 인덱스 없음 | ALL | NULL | 40,064 | 5.90 | - |
+| (status, due_date) | range | idx_sv_status_due | 4,271 | 1.46 | 약 4.0배 |
+
+EXPLAIN 캡처: (before / after 이미지)
+
+## 2. 인덱스가 효과 없는 경우
+| 쿼리 | before(ms) | after(ms) | 이유 |
+|---|---|---|---|
+| 서버별 미해결 수 | 89.47 | 85.23 | 모든 서버를 읽어야 해서 범위를 좁힐 수 없음 |
+
+## 3. 쿼리 작성 방식 비교
+| 질문 | 방식 A | 방식 B | 결과 같음? | A(ms) | B(ms) |
+|---|---|---|---|---|---|
+| 서버별 미해결 수 | JOIN + GROUP BY | 상관 서브쿼리 | 예 (20000행) | 85.23 | 54.57 |
+| 맡은 건 없는 담당자 | NOT IN | NOT EXISTS | **아니오** (0행 vs 1행, NULL 때문) | - | - |
+
+## 결론
+- ①에 추천: CREATE INDEX idx_sv_status_due ON system_vulnerabilities (status, due_date);
+- 인덱스는 조건으로 범위를 좁힐 수 있는 쿼리에만 효과가 있다.
+- 작성 방식은 추측하지 말고 결과와 시간을 측정해서 고른다.</pre>
+      <h3 class="part">④ 확인 방법</h3>
+      <p>GitHub에서 파일을 열었을 때 표가 깨지지 않고 보이면 돼요. 숫자는 꼭 <strong>내가 측정한 값</strong>으로 바꿔 넣으세요 (위 숫자는 양식을 보여주기 위한 검증 당시 값).</p>
+      <h3 class="part">⑤ 막히기 쉬운 부분</h3>
+      <div class="table-wrap">
+        <table class="trouble">
+          <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
+          <tbody>
+            <tr><td>GitHub에서 표가 그냥 글자로 보임</td><td>표 위에 빈 줄이 없음</td><td>표 앞에 빈 줄 하나</td></tr>
+            <tr><td>"4배"인데 발표 때 숫자가 다름</td><td>다른 PC·다른 데이터로 다시 잼</td><td>발표용 측정은 한 PC에서 한 번에, 조건과 함께 기록</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
+      <p>→ <strong>발표 자료</strong>: 1·3번 표와 EXPLAIN 캡처. → <strong>①</strong>: 결론의 추천 인덱스.</p>
+    </section>
+
+    <footer>
+      <p><a href="./">← ② 역할 페이지</a> · <a href="#files">↑ 목차</a></p>
+      <p>막히면 단톡에 에러 메시지 전체를 복사해서 공유</p>
+    </footer>
+  </main>
+  <script src="../../assets/site.js"></script>
+</body>
+</html>
