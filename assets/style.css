@@ -471,3 +471,26 @@ pre.out.bad::before { content: "결과"; color: var(--warn); }
   .step > h2 { align-items: flex-start; }
   .trouble { min-width: 560px; }   /* 좁은 화면에서는 표 안에서 가로 스크롤 */
 }
+
+/* ---------- 문제 페이지 (problems/) ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--card);
+  font: 600 .78rem/1.6 var(--sans);
+}
+.chip a { color: var(--accent); }
+.chip.draft { border-color: var(--warn); background: var(--warn-soft); color: #6b4510; }
+td .chip { margin-left: 6px; font-size: .7rem; }
+.examples { display: grid; gap: 18px; }
+.examples h3 { margin: 16px 0 8px; font-size: .95rem; }
+.io-name { margin: 12px 0 4px; font-size: .85rem; }
+table.io { font-size: .84rem; }
+table.io td, table.io th { padding: 6px 10px; font-family: var(--mono); }
+table.io td:first-child { font-weight: 400; }
+.hidden-note { margin: 12px 0 0; color: var(--muted); font-size: .88rem; }
+.checklist .success { display: block; margin-top: 2px; color: var(--muted); font-size: .88rem; }
+.repo-note { margin-top: 18px; }

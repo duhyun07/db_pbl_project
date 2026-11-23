@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 1 실제 CVE 1건 적재: DB 값 = 원본 JSON 값</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 1</p>
+    <h1>실제 CVE 1건 적재: DB 값 = 원본 JSON 값</h1>
+    <div class="chips">
+        <span class="chip">담당 ④</span>
+        <span class="chip">체크리스트</span>
+        <span class="chip">선행 <a href="00.html">#0</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>새로 나온 OpenSSH 취약점 1건을 NVD·Ubuntu에서 받아 <code>vulnerabilities</code>, <code>cve_package_status</code>에 넣고, DB 값이 원본 JSON과 같은지 확인한다.</p></section>
+    <p class="section-label">CHECKLIST · 확인 항목 (체크하면 이 브라우저에 저장돼요)</p>
+    <section class="panel">
+      <ul class="checklist" data-key="problem-01"><li><label><input type="checkbox"><span><code>data/raw/nvd/CVE-….json</code>, <code>data/raw/ubuntu/CVE-….json</code> 저장 <span class="success">→ 성공 기준: 두 파일이 있고 열면 같은 cve_id</span></span></label></li><li><label><input type="checkbox"><span><code>vulnerabilities</code> 1행: cve_id, cvss_score, cvss_version, cvss_source, published_date, ubuntu_priority <span class="success">→ 성공 기준: 원본 JSON의 값과 글자 하나까지 같음, 없는 값은 NULL (0 아님)</span></span></label></li><li><label><input type="checkbox"><span><code>cve_package_status</code>: noble → <code>24.04</code>, jammy → <code>22.04</code>로 변환된 행 <span class="success">→ 성공 기준: ubuntu_release에 코드명(noble)이 없음, released 행은 fixed_version 있음</span></span></label></li><li><label><input type="checkbox"><span><code>python data/validate_db.py</code> <span class="success">→ 성공 기준: 해당 CVE가 "일치"</span></span></label></li><li><label><input type="checkbox"><span><code>docs/data_validation.md</code>에 한 줄 기록 <span class="success">→ 성공 기준: CVE, 일치 여부, CVSS 출처</span></span></label></li></ul>
+      <p class="progress"></p>
+    </section>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>Ubuntu JSON의 <code>noble</code>을 그대로 넣으면 CHECK 오류 3819가 나요. DB에는 <code>24.04</code>.</li><li>CVSS가 없으면 NULL. 0점은 "안전"으로 오해돼요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>5주차 자료형 (DECIMAL, DATE, ENUM)</li><li>1주차 PK 조건</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>체크리스트 문제라 맞음/틀림을 매기지 않아요. 위 항목을 직접 확인하고 체크하세요.</p>
+<pre>python judge/judge.py 1</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>실제 데이터 적재 전 상태: schema.sql만 다시 실행 (seed는 넣지 않음)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="02.html">다음 문제 #2 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/01/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

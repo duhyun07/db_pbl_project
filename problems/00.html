@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 0 환경 띄우기: SHOW TABLES 10행</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 0</p>
+    <h1>환경 띄우기: SHOW TABLES 10행</h1>
+    <div class="chips">
+        <span class="chip">담당 전원</span>
+        <span class="chip">체크리스트</span>
+        <span class="chip">선행 없음</span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>Docker(또는 Plan B인 수업용 MySQL)로 <code>vuln_mgmt</code> DB를 띄우고, Workbench로 접속해 스키마와 seed가 들어 있는지 확인한다.</p></section>
+    <p class="section-label">CHECKLIST · 확인 항목 (체크하면 이 브라우저에 저장돼요)</p>
+    <section class="panel">
+      <ul class="checklist" data-key="problem-00"><li><label><input type="checkbox"><span><code>docker compose ps</code>에서 db가 <code>(healthy)</code> <span class="success">→ 성공 기준: STATUS 열에 healthy (Plan B면 건너뜀)</span></span></label></li><li><label><input type="checkbox"><span>Workbench 새 연결 <code>127.0.0.1:3307</code>(또는 .env의 MYSQL_PORT), 사용자 <code>vuln_app</code>로 접속 <span class="success">→ 성공 기준: Test Connection 성공</span></span></label></li><li><label><input type="checkbox"><span><code>USE vuln_mgmt; SHOW TABLES;</code> <span class="success">→ 성공 기준: 10행 (테이블 8개 + 뷰 2개)</span></span></label></li><li><label><input type="checkbox"><span><code>SELECT VERSION();</code> <span class="success">→ 성공 기준: 8.0.16 이상 (CHECK 제약이 동작하는 버전)</span></span></label></li><li><label><input type="checkbox"><span><code>SELECT COUNT(*) FROM system_vulnerabilities;</code> <span class="success">→ 성공 기준: 9 (seed를 막 적재한 상태)</span></span></label></li><li><label><input type="checkbox"><span><code>python judge/judge.py 0</code> <span class="success">→ 성공 기준: 자동 확인 항목이 모두 확인됨</span></span></label></li></ul>
+      <p class="progress"></p>
+    </section>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>포트 3306은 수업용 MySQL이 쓰고 있을 가능성이 높아요. <code>.env</code>의 <code>MYSQL_PORT=3307</code>로 바꾸고 <code>docker compose up -d</code>를 다시 실행하세요.</li><li>10행이 아니면 schema.sql이 중간에 멈춘 거예요. 오류 메시지를 단톡에 올려 주세요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>1주차 Workbench 사용법</li><li>2주차 CREATE DATABASE·USE</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>체크리스트 문제라 맞음/틀림을 매기지 않아요. 위 항목을 직접 확인하고 체크하세요. 채점기를 실행하면 자동으로 확인할 수 있는 항목은 결과를 같이 보여줘요.</p>
+<pre>python judge/judge.py 0</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>schema·seed 다시 적재 (공통 가이드의 명령, Plan B는 Workbench에서 schema.sql → seed.sql 실행)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="01.html">다음 문제 #1 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/00/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

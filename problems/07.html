@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 7 평균보다 미해결이 많은 서버 (HAVING + 서브쿼리)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 7 · 초안</p>
+    <h1>평균보다 미해결이 많은 서버 (HAVING + 서브쿼리)</h1>
+    <div class="chips">
+        <span class="chip">담당 ②</span>
+        <span class="chip">채점</span>
+        <span class="chip draft">초안 · 11/23 회의에서 확정</span>
+        <span class="chip">선행 <a href="06.html">#6</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>서버별 미해결(<code>open</code>, <code>in_progress</code>) 조치 건수를 구하고, 그 건수가 "모든 서버의 미해결 건수 평균"보다 많은 서버를 찾는다. 평균에는 미해결이 0건인 서버도 포함한다.</p></section>
+    <p class="section-label">IO · 입력과 출력</p>
+    <section class="grid-2">
+      <div class="panel"><h2>입력</h2><p><code>sql/q07.sql</code>: SELECT 문 1개. 파라미터 없음.</p></div>
+      <div class="panel"><h2>출력</h2><p><code>hostname, unresolved_count</code>. <code>unresolved_count</code> 내림차순, 같으면 <code>hostname</code> 오름차순.</p></div>
+    </section>
+    <p class="section-label">LIMIT · 제한</p>
+    <section class="panel"><ul><li>평균은 서브쿼리로 계산 (숫자를 직접 쓰지 않기)</li></ul></section>
+    <p class="section-label">EXAMPLE · 예제</p>
+    <section class="examples">
+      <div class="panel"><h2>예제 1</h2>
+        <h3>예제 입력 (필요한 컬럼만)</h3>
+        <p class="io-name"><code>systems</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>system_id</th><th>hostname</th></tr></thead><tbody><tr><td>1</td><td>web-01</td></tr><tr><td>2</td><td>web-02</td></tr><tr><td>3</td><td>db-01</td></tr><tr><td>4</td><td>dev-01</td></tr></tbody></table></div>
+        <p class="io-name"><code>system_vulnerabilities</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>sv_id</th><th>system_id</th><th>cve_id</th><th>status</th></tr></thead><tbody><tr><td>1</td><td>1</td><td>CVE-0000-0001</td><td>open</td></tr><tr><td>2</td><td>1</td><td>CVE-0000-0002</td><td>open</td></tr><tr><td>3</td><td>1</td><td>CVE-0000-0003</td><td>in_progress</td></tr><tr><td>4</td><td>2</td><td>CVE-0000-0001</td><td>open</td></tr><tr><td>5</td><td>2</td><td>CVE-0000-0002</td><td>patched</td></tr><tr><td>6</td><td>3</td><td>CVE-0000-0001</td><td>in_progress</td></tr><tr><td>7</td><td>3</td><td>CVE-0000-0004</td><td>risk_accepted</td></tr><tr><td>8</td><td>4</td><td>CVE-0000-0001</td><td>patched</td></tr></tbody></table></div>
+        <h3>예제 출력</h3>
+        <div class="table-wrap"><table class="io"><thead><tr><th>hostname</th><th>unresolved_count</th></tr></thead><tbody><tr><td>web-01</td><td>3</td></tr></tbody></table></div></div>
+    </section>
+    <p class="hidden-note">이 밖에 숨은 케이스가 2개 있어요. 숨은 케이스가 틀리면 입력은 보여 주지 않고 "숨은 케이스 n"이라고만 나와요.</p>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>예제: web-01 3, web-02 1, db-01 1, dev-01 0 → 평균 5/4 = 1.25 → web-01만.</li><li>0건 서버를 빼고 평균을 내면(5/3) 숨은 케이스에서 틀려요. 서버 목록은 <code>systems</code>에서 시작해야 해요.</li><li>patched, risk_accepted는 미해결이 아니에요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>10주차 GROUP BY·HAVING</li><li>11주차 FROM절·HAVING절 서브쿼리</li><li>7주차 LEFT JOIN</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>제출 파일 <code>sql/q07.sql</code>을 만든 뒤 실행해요. <code>맞았습니다!!</code>가 나오면 다음 문제로 넘어가요. 채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요.</p>
+<pre># vuln-mgmt 레포 루트에서
+python judge/judge.py 7</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요. 직접 실험하다 데이터가 바뀌었으면 schema·seed 다시 적재 (공통 가이드의 명령, Plan B는 Workbench에서 schema.sql → seed.sql 실행)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="08.html">다음 문제 #8 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/07/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

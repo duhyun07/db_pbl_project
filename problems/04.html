@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 4 상태 변경 → patch_history 자동 기록</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 4</p>
+    <h1>상태 변경 → patch_history 자동 기록</h1>
+    <div class="chips">
+        <span class="chip">담당 ①③</span>
+        <span class="chip">채점</span>
+        <span class="chip">선행 <a href="00.html">#0</a>, <a href="03.html">#3</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>담당자가 조치 건의 상태를 바꾸는 UPDATE를 작성한다. 이력은 트리거가 자동으로 남기므로 <code>patch_history</code>에 직접 INSERT하지 않는다. 변경자(<code>changed_by</code>)가 정확히 기록되고, <code>patched</code>로 바꿀 때는 완료 시각도 함께 저장돼야 한다.</p></section>
+    <p class="section-label">IO · 입력과 출력</p>
+    <section class="grid-2">
+      <div class="panel"><h2>입력</h2><p><code>sql/q04.sql</code>: UPDATE 문 1개. 파라미터는 이름 있는 자리로: <code>%(sv_id)s</code>, <code>%(new_status)s</code>, <code>%(staff_id)s</code>(바꾸는 사람), <code>%(changed_at)s</code>(바꾼 시각).</p></div>
+      <div class="panel"><h2>출력</h2><p>채점기가 UPDATE 뒤에 (1) 해당 조치 건의 이력 <code>old_status, new_status, changed_by</code>를 history_id 순으로, (2) 조치 건의 <code>status, patched_at, updated_by</code>를 조회해 비교한다.</p></div>
+    </section>
+    <p class="section-label">LIMIT · 제한</p>
+    <section class="panel"><ul><li><code>NOW()</code> 대신 <code>%(changed_at)s</code> 사용 (결과가 날짜에 따라 바뀌지 않게)</li><li><code>patch_history</code>에 직접 INSERT 금지 (트리거 전용)</li><li><code>patched</code>가 아닌 상태로 바꿀 때는 <code>patched_at</code>을 바꾸지 않는다</li></ul></section>
+    <p class="section-label">EXAMPLE · 예제</p>
+    <section class="examples">
+      <div class="panel"><h2>예제 1 — open → in_progress (변경자 1)</h2>
+        <p>파라미터: <code>sv_id = 1, new_status = in_progress, staff_id = 1, changed_at = 2026-11-25 15:30:00</code></p>
+        <h3>예제 입력 (필요한 컬럼만)</h3>
+        <p class="io-name"><code>system_vulnerabilities</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>sv_id</th><th>status</th><th>patched_at</th><th>updated_by</th></tr></thead><tbody><tr><td>1</td><td>open</td><td>NULL</td><td>3</td></tr></tbody></table></div>
+        <p class="io-name"><code>staff</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>staff_id</th><th>name</th></tr></thead><tbody><tr><td>1</td><td>김보안</td></tr><tr><td>2</td><td>이서버</td></tr><tr><td>3</td><td>박운영</td></tr></tbody></table></div>
+        <h3>예제 출력</h3>
+        <p class="io-name">patch_history (history_id 순)</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>old_status</th><th>new_status</th><th>changed_by</th></tr></thead><tbody><tr><td>NULL</td><td>open</td><td>3</td></tr><tr><td>open</td><td>in_progress</td><td>1</td></tr></tbody></table></div>
+        <p class="io-name">system_vulnerabilities</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>status</th><th>patched_at</th><th>updated_by</th></tr></thead><tbody><tr><td>in_progress</td><td>NULL</td><td>1</td></tr></tbody></table></div></div>
+      <div class="panel"><h2>예제 2 — in_progress → patched (변경자 1)</h2>
+        <p>파라미터: <code>sv_id = 1, new_status = patched, staff_id = 1, changed_at = 2026-11-25 15:30:00</code></p>
+        <h3>예제 입력 (필요한 컬럼만)</h3>
+        <p class="io-name"><code>system_vulnerabilities</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>sv_id</th><th>status</th><th>patched_at</th><th>updated_by</th></tr></thead><tbody><tr><td>1</td><td>in_progress</td><td>NULL</td><td>2</td></tr></tbody></table></div>
+        <p class="io-name"><code>staff</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>staff_id</th><th>name</th></tr></thead><tbody><tr><td>1</td><td>김보안</td></tr><tr><td>2</td><td>이서버</td></tr><tr><td>3</td><td>박운영</td></tr></tbody></table></div>
+        <h3>예제 출력</h3>
+        <p class="io-name">patch_history (history_id 순)</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>old_status</th><th>new_status</th><th>changed_by</th></tr></thead><tbody><tr><td>NULL</td><td>in_progress</td><td>2</td></tr><tr><td>in_progress</td><td>patched</td><td>1</td></tr></tbody></table></div>
+        <p class="io-name">system_vulnerabilities</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>status</th><th>patched_at</th><th>updated_by</th></tr></thead><tbody><tr><td>patched</td><td>2026-11-25 15:30:00</td><td>1</td></tr></tbody></table></div></div>
+    </section>
+    <p class="hidden-note">이 밖에 숨은 케이스가 2개 있어요. 숨은 케이스가 틀리면 입력은 보여 주지 않고 "숨은 케이스 n"이라고만 나와요.</p>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>케이스 1에서 이전 변경자는 3번이에요. UPDATE에서 <code>updated_by</code>를 빼먹으면 이력의 changed_by가 3으로 남아 틀려요.</li><li>케이스 2에서 <code>patched_at</code>을 안 넣으면 CHECK 오류 3819(런타임 에러)가 나요.</li><li>상태가 그대로면(open → open) 트리거는 이력을 남기지 않아요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>2주차 UPDATE</li><li>6주차 FK NULL</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>제출 파일 <code>sql/q04.sql</code>을 만든 뒤 실행해요. <code>맞았습니다!!</code>가 나오면 다음 문제로 넘어가요. 채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요.</p>
+<pre># vuln-mgmt 레포 루트에서
+python judge/judge.py 4</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요. 직접 실험하다 데이터가 바뀌었으면 schema·seed 다시 적재 (공통 가이드의 명령, Plan B는 Workbench에서 schema.sql → seed.sql 실행)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="05.html">다음 문제 #5 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/04/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>
