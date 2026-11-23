@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 2 가상 서버·설치 패키지 생성 (seed 고정 시 개수 일치)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 2</p>
+    <h1>가상 서버·설치 패키지 생성 (seed 고정 시 개수 일치)</h1>
+    <div class="chips">
+        <span class="chip">담당 ④</span>
+        <span class="chip">채점 (DB 상태 검사)</span>
+        <span class="chip">선행 <a href="00.html">#0</a>, <a href="01.html">#1</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p><code>python data/generate_synthetic.py --mode demo</code>로 시연용 서버 6대와 설치 패키지를 만든다. random seed를 고정했으므로 누가 실행해도 아래 개수가 정확히 나와야 한다.</p></section>
+    <p class="section-label">IO · 입력과 출력</p>
+    <section class="grid-2">
+      <div class="panel"><h2>입력</h2><p>없음. 실제 데이터(software, vulnerabilities, cve_package_status)를 적재한 DB에서 생성기를 실행한 뒤 채점한다.</p></div>
+      <div class="panel"><h2>출력</h2><p>채점기가 아래 확인 쿼리를 실행해 기대값과 비교한다.</p></div>
+    </section>
+    <p class="section-label">LIMIT · 제한</p>
+    <section class="panel"><ul><li>설치 버전(<code>installed_version</code>)은 지어내지 않고 <code>cve_package_status.fixed_version</code>에 있는 값 중에서 고른다.</li><li>ubuntu_release는 코드명이 아니라 <code>24.04</code>.</li></ul></section>
+    <p class="section-label">CHECK · 채점기가 확인하는 것</p>
+    <section class="panel table-wrap"><table><thead><tr><th>확인</th><th>쿼리</th><th>기대값</th></tr></thead><tbody><tr><td>1. 서버 6대</td><td><code>SELECT COUNT(*) FROM systems</code></td><td>6</td></tr><tr><td>2. 서버 이름</td><td><code>SELECT hostname FROM systems</code></td><td>web-prod-01 / web-prod-02 / web-stg-01 / db-prod-01 / dev-01 / dev-02</td></tr><tr><td>3. 환경별 대수</td><td><code>SELECT CAST(environment AS CHAR), COUNT(*) FROM systems GROUP BY environment</code></td><td>prod, 3 / staging, 1 / dev, 2</td></tr><tr><td>4. 모든 서버 24.04</td><td><code>SELECT COUNT(*) FROM systems WHERE ubuntu_release &lt;&gt; '24.04'</code></td><td>0</td></tr><tr><td>5. 소프트웨어별 설치 서버 수</td><td><code>SELECT s.source_package, COUNT(*) FROM installed_software i JOIN software s ON s.software_id = i.software_id GROUP BY s.source_package</code></td><td>apache2, 4 / openssh, 6</td></tr><tr><td>6. 설치 버전이 실제 수정 버전 중 하나</td><td><code>SELECT COUNT(*) FROM installed_software i WHERE NOT EXISTS (SELECT 1 FROM cve_package_status c WHERE c.software_id = i.software_id AND c.fixed_version = i.installed_version)</code></td><td>0</td></tr><tr><td>7. 담당자 4명</td><td><code>SELECT COUNT(*) FROM staff</code></td><td>4</td></tr></tbody></table></section>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>"설치 버전이 실제 수정 버전 중 하나"가 0이 아니면 버전을 지어낸 거예요.</li><li>환경별 대수: prod 3, staging 1, dev 2. 서버 이름까지 맞아야 ③의 시연 시나리오가 그대로 동작해요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>6주차 FK·N:M 중간 테이블</li><li>4주차 COUNT</li><li>10주차 GROUP BY</li><li>11주차 NOT EXISTS</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>생성기를 실행한 뒤 채점기를 실행해요. <code>맞았습니다!!</code>가 나오면 다음 문제로 넘어가요. 채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요.</p>
+<pre># vuln-mgmt 레포 루트에서
+python judge/judge.py 2</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>schema.sql → <code>python data/load_db.py</code> → <code>python data/generate_synthetic.py --mode demo</code> (생성기는 실행할 때마다 가상 데이터 테이블을 비우고 다시 만들어요)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="03.html">다음 문제 #3 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/02/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

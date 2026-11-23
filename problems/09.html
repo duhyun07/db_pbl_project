@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 9 인덱스 전후 EXPLAIN 비교 (type, key, rows)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 9</p>
+    <h1>인덱스 전후 EXPLAIN 비교 (type, key, rows)</h1>
+    <div class="chips">
+        <span class="chip">담당 ②④</span>
+        <span class="chip">체크리스트</span>
+        <span class="chip">선행 <a href="02.html">#2</a>, <a href="05.html">#5</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>대량 가상 데이터에서 인덱스가 없는 일반 컬럼으로 거르는 쿼리를 골라, 인덱스를 추가하기 전과 후의 EXPLAIN과 실행 시간을 비교한다.</p></section>
+    <p class="section-label">CHECKLIST · 확인 항목 (체크하면 이 브라우저에 저장돼요)</p>
+    <section class="panel">
+      <ul class="checklist" data-key="problem-09"><li><label><input type="checkbox"><span>④: <code>python data/generate_synthetic.py --mode bench --servers 20000</code> 후 <code>SELECT COUNT(*) FROM system_vulnerabilities;</code> <span class="success">→ 성공 기준: 수만 행</span></span></label></li><li><label><input type="checkbox"><span><code>ANALYZE TABLE system_vulnerabilities;</code> <span class="success">→ 성공 기준: Msg_text = OK</span></span></label></li><li><label><input type="checkbox"><span>인덱스 없이 #5 쿼리(또는 같은 조건의 COUNT)에 EXPLAIN <span class="success">→ 성공 기준: type = ALL, key = NULL</span></span></label></li><li><label><input type="checkbox"><span><code>CREATE INDEX idx_sv_status_due ON system_vulnerabilities (status, due_date);</code> 후 다시 EXPLAIN <span class="success">→ 성공 기준: type = range, key = idx_sv_status_due, rows가 크게 줄어듦</span></span></label></li><li><label><input type="checkbox"><span><code>python sql/benchmark.py</code>로 전후 평균 시간 <span class="success">→ 성공 기준: after가 before보다 짧음, 20회 이상 평균</span></span></label></li><li><label><input type="checkbox"><span><code>docs/performance.md</code>에 표 기록 <span class="success">→ 성공 기준: 데이터 크기, MySQL 버전, type/key/rows, 평균 ms</span></span></label></li></ul>
+      <p class="progress"></p>
+    </section>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>FK·UNIQUE 컬럼(system_id, cve_id, assignee_id 등)에는 이미 인덱스가 있어서 전후 차이가 안 나요. <code>cvss_score</code>, <code>status</code>, <code>due_date</code> 같은 일반 컬럼으로 실험하세요.</li><li>후보 목록은 vuln-mgmt <code>docs/design_decisions.md</code> §6.</li><li><code>rows</code>는 추정치예요. 실제 시간은 <code>EXPLAIN ANALYZE</code>나 여러 번 잰 평균으로 비교해요.</li><li>실험한 인덱스는 내 로컬 DB에서만. 스키마 반영은 ①이 결정해요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>7주차 EXPLAIN (type, key, rows=추정치)</li><li>12주차 CREATE INDEX, PK·FK·UK 자동 인덱스</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>체크리스트 문제라 맞음/틀림을 매기지 않아요. 위 항목을 직접 확인하고 체크하세요.</p>
+<pre>python judge/judge.py 9</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>인덱스 삭제: <code>DROP INDEX idx_sv_status_due ON system_vulnerabilities;</code> → 시연용으로 되돌리기: <code>python data/generate_synthetic.py --mode demo</code></p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/09/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

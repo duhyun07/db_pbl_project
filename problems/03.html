@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제 3 조치 건 등록과 무결성 (실패해야 정답)</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">문제 3</p>
+    <h1>조치 건 등록과 무결성 (실패해야 정답)</h1>
+    <div class="chips">
+        <span class="chip">담당 ①④</span>
+        <span class="chip">실패해야 정답</span>
+        <span class="chip">선행 <a href="00.html">#0</a></span>
+    </div>
+
+    <p class="section-label">PROBLEM · 문제</p>
+    <section class="panel"><p>영향받는 서버에 조치 건을 등록하는 INSERT와, CVE를 등록하는 INSERT를 작성한다. 정상 데이터는 들어가야 하고, 잘못된 데이터는 DB 제약조건이 막아야 한다. 막혔을 때 나오는 MySQL 오류 코드가 채점 기준이다.</p></section>
+    <p class="section-label">IO · 입력과 출력</p>
+    <section class="grid-2">
+      <div class="panel"><h2>입력</h2><p>제출 파일 2개.<br><code>sql/q03_register.sql</code>: <code>system_vulnerabilities</code>에 1행 INSERT. 파라미터 8개를 이 순서로 <code>%s</code>: system_id, cve_id, software_id, status, assignee_id, due_date, patched_at, updated_by<br><code>sql/q03_cve.sql</code>: <code>vulnerabilities</code>에 1행 INSERT. 파라미터 3개를 이 순서로 <code>%s</code>: cve_id, description, cvss_score</p></div>
+      <div class="panel"><h2>출력</h2><p>케이스마다 "성공" 또는 MySQL 오류 코드. 성공하면 채점기가 등록된 행과 patch_history를 확인한다.</p></div>
+    </section>
+    <p class="section-label">LIMIT · 제한</p>
+    <section class="panel"><ul><li>값을 SQL에 직접 쓰지 말고 <code>%s</code> 파라미터만 사용</li><li>한 파일에 SQL 문장 하나</li></ul></section>
+    <p class="section-label">EXAMPLE · 예제</p>
+    <section class="examples">
+      <div class="panel"><h2>예제 1 — 설치 안 된 소프트웨어</h2>
+        <p>제출 파일: <code>sql/q03_register.sql</code></p>
+        <p>파라미터: <code>system_id = 2, cve_id = CVE-0000-0002, software_id = 1, status = open, assignee_id = NULL, due_date = 2026-12-01, patched_at = NULL, updated_by = NULL</code></p>
+        <h3>예제 입력 (필요한 컬럼만)</h3>
+        <p class="io-name"><code>systems</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>system_id</th><th>hostname</th></tr></thead><tbody><tr><td>1</td><td>web-01</td></tr><tr><td>2</td><td>dev-01</td></tr></tbody></table></div>
+        <p class="io-name"><code>installed_software</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>system_id</th><th>software_id</th></tr></thead><tbody><tr><td>1</td><td>1</td></tr><tr><td>1</td><td>2</td></tr><tr><td>2</td><td>2</td></tr></tbody></table></div>
+        <p class="io-name"><code>system_vulnerabilities</code></p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>sv_id</th><th>system_id</th><th>cve_id</th><th>software_id</th><th>status</th></tr></thead><tbody><tr><td>1</td><td>1</td><td>CVE-0000-0001</td><td>2</td><td>open</td></tr></tbody></table></div>
+        <h3>예제 출력</h3>
+        <pre class="out bad">ERROR 1452</pre></div>
+      <div class="panel"><h2>예제 2 — 같은 서버·같은 CVE 중복 등록</h2>
+        <p>제출 파일: <code>sql/q03_register.sql</code></p>
+        <p>파라미터: <code>system_id = 1, cve_id = CVE-0000-0001, software_id = 2, status = open, assignee_id = 2, due_date = 2026-12-01, patched_at = NULL, updated_by = 2</code></p>
+        <p>입력 데이터: 예제 1과 같아요.</p>
+        <h3>예제 출력</h3>
+        <pre class="out bad">ERROR 1062</pre></div>
+      <div class="panel"><h2>예제 3 — patched인데 patched_at 없음</h2>
+        <p>제출 파일: <code>sql/q03_register.sql</code></p>
+        <p>파라미터: <code>system_id = 1, cve_id = CVE-0000-0002, software_id = 1, status = patched, assignee_id = 1, due_date = 2026-12-01, patched_at = NULL, updated_by = 1</code></p>
+        <p>입력 데이터: 예제 2과 같아요.</p>
+        <h3>예제 출력</h3>
+        <pre class="out bad">ERROR 3819</pre></div>
+      <div class="panel"><h2>예제 4 — CVE 번호 형식 오류 (소문자)</h2>
+        <p>제출 파일: <code>sql/q03_cve.sql</code></p>
+        <p>파라미터: <code>cve_id = cve-0000-0005, description = [FAKE] 형식 오류, cvss_score = 5.0</code></p>
+        <p>입력 데이터: 예제 3과 같아요.</p>
+        <h3>예제 출력</h3>
+        <pre class="out bad">ERROR 3819</pre></div>
+      <div class="panel"><h2>예제 5 — 정상 등록 (담당자·기한 미정)</h2>
+        <p>제출 파일: <code>sql/q03_register.sql</code></p>
+        <p>파라미터: <code>system_id = 2, cve_id = CVE-0000-0001, software_id = 2, status = open, assignee_id = NULL, due_date = NULL, patched_at = NULL, updated_by = NULL</code></p>
+        <p>입력 데이터: 예제 4과 같아요.</p>
+        <h3>예제 출력</h3>
+        <p class="io-name">system_vulnerabilities</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>system_id</th><th>cve_id</th><th>status</th><th>assignee_id</th><th>due_date</th></tr></thead><tbody><tr><td>2</td><td>CVE-0000-0001</td><td>open</td><td>NULL</td><td>NULL</td></tr></tbody></table></div>
+        <p class="io-name">patch_history (history_id 순)</p>
+        <div class="table-wrap"><table class="io"><thead><tr><th>old_status</th><th>new_status</th><th>changed_by</th></tr></thead><tbody><tr><td>NULL</td><td>open</td><td>NULL</td></tr></tbody></table></div></div>
+    </section>
+    <p class="hidden-note">이 밖에 숨은 케이스가 3개 있어요. 숨은 케이스가 틀리면 입력은 보여 주지 않고 "숨은 케이스 n"이라고만 나와요.</p>
+    <p class="section-label">NOTE · 노트</p>
+    <section class="panel"><ul><li>dev-01에는 OpenSSH(software_id 2)만 설치돼 있어요. Apache 취약점은 등록할 수 없어야 해요 (복합 FK).</li><li>같은 서버에 같은 CVE를 두 번 등록하면 안 돼요. 6주차 <code>likes</code> 중복 좋아요 문제와 같은 상황이에요.</li><li><code>patched</code>인데 완료 시각이 없으면 CHECK가 막아요.</li><li><code>cve-0000-0004</code>처럼 소문자로 써도 막혀야 해요. 이 DB는 대소문자를 구분하지 않는 콜레이션이지만 CHECK는 구분해요.</li></ul></section>
+    <p class="section-label">HINT · 힌트 (관련 수업)</p>
+    <section class="panel"><p>정답 대신 다시 볼 수업 주차예요. 수업에 없던 문법은 <a href="../guide/#dict">공통 가이드의 미니 사전</a>에 있어요.</p><ul><li>1주차 PK 조건(유일)</li><li>6주차 FK·NOT NULL</li><li>12주차 이상 현상</li></ul></section>
+    <p class="section-label">JUDGE · 채점 방법</p>
+    <section class="panel"><p>제출 파일 <code>sql/q03_register.sql</code>, <code>sql/q03_cve.sql</code>을 만든 뒤 실행해요. <code>맞았습니다!!</code>가 나오면 다음 문제로 넘어가요. 채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요.</p>
+<pre># vuln-mgmt 레포 루트에서
+python judge/judge.py 3</pre></section>
+    <p class="section-label">RESET · 이 단계 시작 상태로 되돌리기</p>
+    <section class="panel"><p>채점기는 케이스마다 ROLLBACK해서 DB를 바꾸지 않아요. 직접 실험하다 데이터가 바뀌었으면 schema·seed 다시 적재 (공통 가이드의 명령, Plan B는 Workbench에서 schema.sql → seed.sql 실행)</p>
+<pre># Docker (레포 루트, 기존 데이터는 모두 지워져요)
+docker compose exec db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/schema.sql &amp;&amp; mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 &lt; /work/db/seed.sql'
+
+# Plan B (수업용 MySQL): Workbench에서 db/schema.sql 열고 실행(⚡) → db/seed.sql 열고 실행(⚡)</pre></section>
+
+    <footer>
+      <p><a href="./">← 문제 목록</a> · <a href="04.html">다음 문제 #4 →</a></p>
+      <p>예제와 채점 데이터는 vuln-mgmt <code>judge/problems/03/</code>와 같아요</p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

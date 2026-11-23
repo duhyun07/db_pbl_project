@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f3ee">
+  <title>vuln-mgmt · 문제</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body class="sub">
+  <main class="shell">
+    <div class="top">
+      <a class="brand" href="../">VULN<i>-</i>MGMT</a>
+      <nav>
+        <a href="../guide/">공통</a>
+        <a href="../github/">GitHub</a>
+        <a href="../problems/" aria-current="page">문제</a>
+        <a href="../roles/01-db/">① DB</a>
+        <a href="../roles/02-sql/">② SQL</a>
+        <a href="../roles/03-app/">③ Python</a>
+        <a href="../roles/04-data/">④ 데이터</a>
+      </nav>
+    </div>
+
+    <p class="eyebrow">PROBLEMS · 백준처럼 풀고 채점하기</p>
+    <h1>문제</h1>
+    <p class="intro">구현 단계마다 <strong>정해진 입력 → 기대 결과와 비교 → 맞으면 다음 단계</strong>로 가요. 문제 번호 순서가 곧 발표 시연 순서예요. 앞 문제 결과 위에 쌓이니까 "선행" 문제를 먼저 풀어 주세요.</p>
+
+    <p class="section-label">SCENARIO · 시연 순서</p>
+    <section class="panel">
+      <p>새 OpenSSH 취약점 등장 <strong>(#1)</strong> → 영향받는 서버 <strong>(#2)</strong> → 조치 건 등록·담당자 배정 <strong>(#3)</strong> → 조치와 이력 <strong>(#4)</strong> → 기한 초과 <strong>(#5)</strong> → 완료율 <strong>(#6, #7)</strong> → 화면 <strong>(#8)</strong> → 성능 <strong>(#9)</strong></p>
+    </section>
+
+    <p class="section-label">LIST · 문제 목록</p>
+    <section class="panel table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>제목</th><th>담당</th><th>유형</th><th>선행</th><th>관련 수업</th></tr></thead>
+        <tbody>
+          <tr><td>0</td><td><a href="00.html">환경 띄우기: SHOW TABLES 10행</a></td><td>전원</td><td>체크리스트</td><td>-</td><td>1주차, 2주차</td></tr><tr><td>1</td><td><a href="01.html">실제 CVE 1건 적재: DB 값 = 원본 JSON 값</a></td><td>④</td><td>체크리스트</td><td><a href="00.html">#0</a></td><td>5주차, 1주차</td></tr><tr><td>2</td><td><a href="02.html">가상 서버·설치 패키지 생성 (seed 고정 시 개수 일치)</a></td><td>④</td><td>채점 (DB 상태 검사)</td><td><a href="00.html">#0</a>, <a href="01.html">#1</a></td><td>6주차, 4주차, 10주차, 11주차</td></tr><tr><td>3</td><td><a href="03.html">조치 건 등록과 무결성 (실패해야 정답)</a></td><td>①④</td><td>실패해야 정답</td><td><a href="00.html">#0</a></td><td>1주차, 6주차, 12주차</td></tr><tr><td>4</td><td><a href="04.html">상태 변경 → patch_history 자동 기록</a></td><td>①③</td><td>채점</td><td><a href="00.html">#0</a>, <a href="03.html">#3</a></td><td>2주차, 6주차</td></tr><tr><td>5</td><td><a href="05.html">기한을 넘긴 미해결 조치 건</a> <span class="chip draft">초안</span></td><td>②</td><td>채점</td><td><a href="00.html">#0</a></td><td>3주차, 4주차, 5주차, 7주차, 10주차</td></tr><tr><td>6</td><td><a href="06.html">서버별 패치 완료율 + 집계 단위 구분</a> <span class="chip draft">초안</span></td><td>②</td><td>채점</td><td><a href="05.html">#5</a></td><td>4주차, 7주차, 10주차</td></tr><tr><td>7</td><td><a href="07.html">평균보다 미해결이 많은 서버 (HAVING + 서브쿼리)</a> <span class="chip draft">초안</span></td><td>②</td><td>채점</td><td><a href="06.html">#6</a></td><td>10주차, 11주차, 7주차</td></tr><tr><td>8</td><td><a href="08.html">앱 화면 숫자 = 해당 쿼리 결과</a></td><td>③</td><td>체크리스트</td><td><a href="04.html">#4</a>, <a href="05.html">#5</a>, <a href="06.html">#6</a></td><td>2주차, 4주차</td></tr><tr><td>9</td><td><a href="09.html">인덱스 전후 EXPLAIN 비교 (type, key, rows)</a></td><td>②④</td><td>체크리스트</td><td><a href="02.html">#2</a>, <a href="05.html">#5</a></td><td>7주차, 12주차</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="section-label">HOW · 채점하는 법</p>
+    <section class="grid-2">
+      <div class="panel">
+        <h2>실행</h2>
+<pre># vuln-mgmt 레포 루트에서 (처음 한 번)
+pip install -r judge/requirements.txt
+
+python judge/judge.py --list    # 문제 목록
+python judge/judge.py 5         # 5번 채점
+python judge/judge.py --all     # 전체</pre>
+        <p>접속 정보는 <code>.env</code>를 읽어요. Docker가 안 되는 Plan B(수업용 MySQL)에서도 <code>.env</code>의 포트·계정만 맞추면 돌아가요.</p>
+      </div>
+      <div class="panel">
+        <h2>결과 메시지</h2>
+        <div class="table-wrap">
+          <table>
+            <tbody>
+              <tr><td><code>맞았습니다!!</code></td><td>모든 케이스 통과 → 다음 문제로</td></tr>
+              <tr><td><code>틀렸습니다 (케이스 n: 기대 … / 실제 …)</code></td><td>예제가 틀림. 기대와 실제를 비교해 보기</td></tr>
+              <tr><td><code>틀렸습니다 (숨은 케이스 n)</code></td><td>예제는 맞는데 함정 케이스가 틀림. 노트를 다시 읽기</td></tr>
+              <tr><td><code>런타임 에러 (… MySQL 코드)</code></td><td>SQL 실행 중 오류. 코드 뜻은 공통 가이드 오류 코드 표</td></tr>
+              <tr><td><code>오류가 나야 하는데 성공했습니다</code></td><td>막혀야 할 잘못된 데이터가 들어감</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <p class="section-label">RULE · 제출 규칙</p>
+    <section class="panel">
+      <ul>
+        <li>제출 파일은 vuln-mgmt의 <code>sql/qNN.sql</code>. 파일 하나에 SQL 문장 하나. ③이 쓰는 <code>sql/query_catalog.json</code>의 SQL과 같은 문장이어야 해요.</li>
+        <li>값은 SQL에 직접 쓰지 않고 <code>%s</code>(또는 <code>%(이름)s</code>) 파라미터로. 파라미터가 있는 SQL에서 <code>%</code> 글자가 필요하면 <code>%%</code>.</li>
+        <li>기준일이 필요한 문제는 <code>CURDATE()</code> 대신 파라미터를 써요. seed 날짜가 오늘 기준이라 결과가 날마다 바뀌는 걸 막기 위해서예요.</li>
+        <li>문제를 통과시키려고 <code>judge/problems/</code>의 케이스를 고치지 않아요. 기대 결과가 이상하면 팀장에게 알려 주세요.</li>
+      </ul>
+    </section>
+
+    <footer>
+      <p><a href="../">← 대시보드</a></p>
+      <p>채점기 코드와 데이터: vuln-mgmt <code>judge/</code></p>
+    </footer>
+  </main>
+  <script src="../assets/site.js"></script>
+</body>
+</html>

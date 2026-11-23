@@ -1,7 +1,10 @@
 # db_pbl_project 작업 지침 (AI 도구용)
 
-이 저장소는 데이터베이스 수업 PBL 2조의 공동 작업 저장소다. 4명이 역할을 나눠 작업하므로,
-AI 도구는 아래 규칙을 지키고 요청받은 범위 안에서만 작업한다. 역할별 상세 내용은 `guide/`, `roles/` 페이지에 있다.
+이 저장소(`db_pbl_project`)는 데이터베이스 수업 PBL 2조의 **팀 작업 사이트**(GitHub Pages)다. 4명이 역할을 나눠 작업하므로,
+AI 도구는 아래 규칙을 지키고 요청받은 범위 안에서만 작업한다. 역할별 상세 내용은 `guide/`, `roles/` 페이지에, 채점 문제는 `problems/`에 있다.
+
+- 코드(DB, SQL, 앱, 데이터, 채점기) = 별도 저장소 `duhyun07/vuln-mgmt`. 코드 작업 규칙은 그 저장소 루트의 `AGENTS.md`를 따른다.
+- 이 사이트 = `duhyun07/db_pbl_project`. 아래 "담당 범위" 표의 코드 폴더 줄은 vuln-mgmt 쪽 폴더를 가리킨다.
 
 ## 프로젝트 원칙
 
@@ -11,14 +14,17 @@ AI 도구는 아래 규칙을 지키고 요청받은 범위 안에서만 작업�
 
 ## 담당 범위
 
-| 폴더 | 담당 |
-|---|---|
-| `db/`, `tests/`, `docker-compose.yml` | ① DB |
-| `sql/` | ② SQL |
-| `app/` | ③ Python |
-| `data/` | ④ 데이터 |
-| `docs/` | 각 문서 작성자 |
-| `index.html`, `guide/`, `github/`, `roles/`, `assets/` | 팀장 (팀 사이트) |
+| 폴더 | 레포 | 담당 |
+|---|---|---|
+| `db/`, `tests/`, `docker-compose.yml` | vuln-mgmt | ① DB |
+| `sql/` | vuln-mgmt | ② SQL |
+| `app/` | vuln-mgmt | ③ Python |
+| `data/` | vuln-mgmt | ④ 데이터 |
+| `docs/` | vuln-mgmt | 각 문서 작성자 |
+| `judge/` | vuln-mgmt | 팀장 (채점기) |
+| `index.html`, `guide/`, `github/`, `roles/`, `problems/`, `assets/` | db_pbl_project (이 레포) | 팀장 (팀 사이트) |
+
+- `problems/`의 예제 입력·출력은 vuln-mgmt `judge/problems/`의 케이스 파일과 같아야 한다. 한쪽을 고치면 다른 쪽도 고친다.
 
 - 요청한 사람의 담당 폴더 밖의 파일은 수정하지 않는다. 필요하면 수정하지 말고 제안으로 남긴다.
 - `db/schema.sql`은 2026-11-23 이후 ① 담당자만 수정한다. 다른 작업에서 스키마 변경이 필요하면 코드를 고치지 말고 필요한 변경을 보고한다.
@@ -30,6 +36,7 @@ AI 도구는 아래 규칙을 지키고 요청받은 범위 안에서만 작업�
 - CVE 번호, CVSS 점수, 수정 버전, USN 번호를 추측하거나 지어내지 않는다. 출처에서 확인되지 않은 값은 NULL로 둔다.
 - 개발용 더미 데이터의 CVE 번호는 `CVE-0000-0001`처럼 실제와 혼동되지 않는 번호를 쓴다.
 - Debian/Ubuntu 패키지 버전은 문자열로 크기를 비교하지 않는다. 영향 판정이 필요하면 `python-debian`의 버전 비교를 쓴다.
+- Ubuntu JSON의 릴리스 코드명(`noble`)은 DB에 번호(`24.04`)로 변환해서 넣는다(CHECK 제약).
 
 ## 코드
 
