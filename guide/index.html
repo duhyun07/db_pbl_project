@@ -14,6 +14,7 @@
       <nav>
         <a href="../guide/" aria-current="page">공통</a>
         <a href="../github/">GitHub</a>
+        <a href="../problems/">문제</a>
         <a href="../roles/01-db/">① DB</a>
         <a href="../roles/02-sql/">② SQL</a>
         <a href="../roles/03-app/">③ Python</a>
@@ -58,18 +59,32 @@
     <p class="section-label">SCHEMA · 테이블 초안 (11/23 확정 예정)</p>
     <section class="panel table-wrap">
       <table>
-        <thead><tr><th>테이블</th><th>뭘 저장하나</th><th>키</th><th>데이터</th></tr></thead>
+        <thead><tr><th>테이블</th><th>뭘 저장하나</th><th>키</th><th>데이터</th><th>수업 예제로 치면</th></tr></thead>
         <tbody>
-          <tr><td><code>software</code></td><td>Apache, OpenSSH + Ubuntu 소스 패키지명</td><td>software_id</td><td>실제</td></tr>
-          <tr><td><code>vulnerabilities</code></td><td>CVE 번호, 설명, CVSS 점수·버전·벡터·출처, Ubuntu priority</td><td>cve_id</td><td>실제</td></tr>
-          <tr><td><code>cve_package_status</code></td><td>Ubuntu 릴리스·패키지별 영향 상태, 수정 버전, USN</td><td>(cve_id, software_id, ubuntu_release)</td><td>실제</td></tr>
-          <tr><td><code>systems</code></td><td>서버 호스트명, Ubuntu 버전, 환경(prod/dev)</td><td>system_id</td><td>가상</td></tr>
-          <tr><td><code>installed_software</code></td><td>서버별 설치 패키지와 버전</td><td>(system_id, software_id)</td><td>가상</td></tr>
-          <tr><td><code>staff</code></td><td>조치 담당자</td><td>staff_id</td><td>가상</td></tr>
-          <tr><td><code>system_vulnerabilities</code></td><td>서버별 조치 건: 상태, 담당자, 기한, 완료일</td><td>sv_id, UNIQUE(system_id, cve_id)</td><td>가상</td></tr>
-          <tr><td><code>patch_history</code></td><td>상태 변경 이력 (트리거가 자동 기록)</td><td>history_id</td><td>가상</td></tr>
+          <tr><td><code>software</code></td><td>Apache, OpenSSH + Ubuntu 소스 패키지명</td><td>software_id</td><td>실제</td><td>10주차 <code>products</code>처럼 기준이 되는 목록</td></tr>
+          <tr><td><code>vulnerabilities</code></td><td>CVE 번호, 설명, CVSS 점수·버전·벡터·출처, Ubuntu priority</td><td>cve_id</td><td>실제</td><td>1주차 PK 조건(유일·NOT NULL·불변)을 만족하는 CVE 번호를 <code>id</code> 대신 그대로 PK로 씀</td></tr>
+          <tr><td><code>cve_package_status</code></td><td>Ubuntu 릴리스·패키지별 영향 상태, 수정 버전, USN</td><td>(cve_id, software_id, ubuntu_release)</td><td>실제</td><td>CVE ↔ 소프트웨어 N:M 중간 테이블 + 릴리스별 속성(상태·수정 버전). 복합 PK 3개 컬럼</td></tr>
+          <tr><td><code>systems</code></td><td>서버 호스트명, Ubuntu 버전, 환경(prod/dev)</td><td>system_id</td><td>가상</td><td>6주차 <code>users</code>처럼 서버 한 대 = 행 하나</td></tr>
+          <tr><td><code>installed_software</code></td><td>서버별 설치 패키지와 버전</td><td>(system_id, software_id)</td><td>가상</td><td>10주차 <code>order_details</code> / 6주차 <code>likes</code> 같은 N:M 중간 테이블 (서버 ↔ 소프트웨어 + 설치 버전)</td></tr>
+          <tr><td><code>staff</code></td><td>조치 담당자</td><td>staff_id</td><td>가상</td><td>6주차 <code>users</code></td></tr>
+          <tr><td><code>system_vulnerabilities</code></td><td>서버별 조치 건: 상태, 담당자, 기한, 완료일</td><td>sv_id, UNIQUE(system_id, cve_id)</td><td>가상</td><td>6주차 <code>appointments</code>(의사-환자 N:M + 날짜 속성)처럼 서버-CVE N:M + 상태·담당자·기한</td></tr>
+          <tr><td><code>patch_history</code></td><td>상태 변경 이력 (트리거가 자동 기록)</td><td>history_id</td><td>가상</td><td>조치 건 1개에 여러 행이 쌓이는 1:N 기록 (10주차 <code>orders</code> → <code>payments</code> 관계와 같은 모양)</td></tr>
         </tbody>
       </table>
+    </section>
+
+    <section class="grid-2" style="margin-top:18px">
+      <div class="panel">
+        <h2>수업 언어로 읽는 제약조건</h2>
+        <ul>
+          <li><code>UNIQUE(system_id, cve_id)</code> = 6주차 <code>likes</code>에서 같은 사람이 같은 사진에 좋아요를 두 번 넣는 문제를 막는 장치예요. 같은 서버에 같은 CVE 조치 건은 1개만.</li>
+          <li><code>assignee_id</code>가 NULL = 6주차 <code>photos.user_id IS NULL</code>처럼 "가리키는 대상(담당자)이 아직 없음". 12주차 ERD로는 선택적 관계(원 표시)예요.</li>
+        </ul>
+      </div>
+      <div class="panel">
+        <h2>복합 PK가 뭔가요?</h2>
+        <p>컬럼 2~3개를 묶어서 <strong>"이 조합은 한 번만 나온다"</strong>를 PK로 삼는 거예요. 수업 예제는 항상 <code>id INTEGER AUTO_INCREMENT</code> 하나였지만, <code>installed_software</code>는 (서버, 소프트웨어) 조합 자체가 행을 구분하니까 따로 <code>id</code>를 만들지 않았어요. 같은 서버에 같은 소프트웨어가 두 번 들어가는 것도 PK가 막아 줘요.</p>
+      </div>
     </section>
 
     <p class="section-label">VALUES · 상태값 (모두 이 값만 쓰기)</p>
@@ -145,8 +160,10 @@
 ├── app/       Streamlit 앱                     ← ③
 ├── tests/     무결성 테스트                     ← ①
 ├── docs/      erd, db_dictionary, 매핑 문서, 발표 자료
-├── docker-compose.yml   (MySQL 8.0, 다 같이 이걸로 실행)
-└── index.html, guide/, roles/   ← 지금 보고 있는 팀 사이트</pre>
+├── judge/     문제 채점기 (python judge/judge.py 5)   ← 팀장
+├── AGENTS.md  AI 도구용 작업 규칙
+└── docker-compose.yml   (MySQL 8.0, 다 같이 이걸로 실행)</pre>
+      <div class="callout" style="margin-top:14px"><strong>레포는 두 개예요.</strong> 코드 = <a href="https://github.com/duhyun07/vuln-mgmt">vuln-mgmt</a> (위 폴더 구조, 각자 clone해서 작업) / 지금 보는 이 사이트 = <a href="https://github.com/duhyun07/db_pbl_project">db_pbl_project</a> (팀장이 관리, 팀원은 clone할 필요 없음).</div>
     </section>
 
     <p class="section-label">RULES · 협업 규칙</p>
@@ -171,6 +188,32 @@
       </div>
     </section>
 
+    <p class="section-label" id="dict">DICT · 수업에 없던 문법 미니 사전</p>
+    <section class="panel table-wrap">
+      <p>강의자료(1~7, 10~12주차)에 없던 것만 모았어요. 오른쪽 예는 모두 우리 <code>db/schema.sql</code>·<code>seed.sql</code>·<code>README.md</code>·<code>docker-compose.yml</code>에 실제로 있는 코드예요.</p>
+      <table>
+        <thead><tr><th>문법</th><th>한 줄 설명</th><th>우리 코드 속 실제 예</th></tr></thead>
+        <tbody>
+          <tr><td>CHECK</td><td>값이 조건을 만족해야 저장돼요 (MySQL 8.0.16부터 실제로 검사)</td><td><code>CHECK (cvss_score IS NULL OR cvss_score BETWEEN 0.0 AND 10.0)</code> → 11.0을 넣으면 오류 3819</td></tr>
+          <tr><td>TRIGGER</td><td>표에 INSERT/UPDATE가 일어나면 자동으로 실행되는 SQL</td><td><code>trg_sv_after_update</code>: <code>OLD.status &lt;&gt; NEW.status</code>이면 <code>patch_history</code>에 (이전 상태, 새 상태, <code>NEW.updated_by</code>) INSERT</td></tr>
+          <tr><td>VIEW</td><td>자주 쓰는 SELECT에 이름을 붙여 표처럼 조회</td><td><code>v_open_risks</code> = 미해결 조치 건 + 서버·CVE·담당자 JOIN → <code>SELECT * FROM v_open_risks;</code></td></tr>
+          <tr><td>IF() / CASE</td><td>조건에 따라 다른 값. IF는 두 갈래, CASE는 여러 갈래</td><td><code>IF(sv.due_date IS NOT NULL AND sv.due_date &lt; CURDATE(), 1, 0) AS is_overdue</code> (v_open_risks). CASE 예는 <a href="../roles/02-sql/#case">② 페이지</a></td></tr>
+          <tr><td>COALESCE(a, b)</td><td>a가 NULL이면 b</td><td><code>COALESCE(SUM(sv.status = 'patched'), 0)</code> — 조치 건 0개 서버는 SUM이 NULL이라 0으로</td></tr>
+          <tr><td>NULLIF(a, b)</td><td>a와 b가 같으면 NULL</td><td><code>… / NULLIF(COUNT(sv.sv_id), 0)</code> — 0으로 나누는 대신 완료율을 NULL로</td></tr>
+          <tr><td>SUM(조건식)</td><td>MySQL에서 조건은 참=1, 거짓=0이라 더하면 개수가 돼요</td><td><code>SUM(sv.status = 'patched')</code> = patched 건수 (v_system_patch_rate)</td></tr>
+          <tr><td>트랜잭션<br>COMMIT / ROLLBACK</td><td>여러 문장을 한 묶음으로: 다 반영(COMMIT)하거나 다 취소(ROLLBACK)</td><td>seed.sql은 <code>START TRANSACTION; … COMMIT;</code>, 테스트와 채점기는 끝에 <code>ROLLBACK</code>해서 데이터를 안 바꿔요</td></tr>
+          <tr><td>복합 PK</td><td>컬럼 여러 개의 조합이 유일</td><td><code>PRIMARY KEY (system_id, software_id)</code> (installed_software)</td></tr>
+          <tr><td>복합 FK</td><td>컬럼 여러 개를 한꺼번에 다른 표의 PK로 참조</td><td><code>FOREIGN KEY (system_id, software_id) REFERENCES installed_software (system_id, software_id)</code> — 설치 안 된 소프트웨어의 취약점은 오류 1452</td></tr>
+          <tr><td>ON DELETE RESTRICT / CASCADE</td><td>부모 행을 지울 때 자식이 있으면 막기 / 자식도 같이 지우기</td><td>조치 건이 있는 담당자 삭제는 RESTRICT라 오류 1451. 조치 건을 지우면 <code>patch_history</code>는 CASCADE로 같이 지워져요</td></tr>
+          <tr><td>REGEXP_LIKE</td><td>문자열이 패턴(정규식)에 맞는지 검사</td><td><code>CHECK (REGEXP_LIKE(cve_id, '^CVE-[0-9]{4}-[0-9]{4,}$', 'c'))</code> — <code>'c'</code>는 대소문자 구분</td></tr>
+          <tr><td>Docker</td><td>모두 똑같은 MySQL을 한 줄로 띄우는 실행 환경</td><td><code>docker-compose.yml</code>: <code>image: mysql:8.0</code>, <code>ports: "${MYSQL_PORT:-3306}:3306"</code></td></tr>
+          <tr><td>Git</td><td>파일 변경 이력 관리 + 공동 작업</td><td><code>feature/역할-작업명</code> 브랜치 → PR → main (<a href="../github/">GitHub 페이지</a>)</td></tr>
+          <tr><td>pymysql</td><td>Python에서 MySQL에 접속하는 라이브러리. autocommit이 꺼져 있어서 바꾼 뒤 <code>conn.commit()</code>이 필요해요</td><td><code>pymysql.connect(host="127.0.0.1", port=3306, user="vuln_app", password="...", database="vuln_mgmt", charset="utf8mb4")</code> (README)</td></tr>
+          <tr><td>파라미터 바인딩 <code>%s</code></td><td>SQL에는 값 자리만 두고 값은 따로 넘겨요. 문자열을 이어 붙이지 않아 SQL Injection을 막아요</td><td><code>UPDATE system_vulnerabilities SET status = 'patched', patched_at = NOW(), updated_by = %s WHERE sv_id = %s;</code> (README 규칙 1)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
     <p class="section-label">TERMS · 자주 나오는 용어</p>
     <section class="panel table-wrap">
       <table>
@@ -179,7 +222,7 @@
           <tr><td>CVSS</td><td>취약점 위험도 점수 0.0~10.0. 버전(3.1, 4.0)마다 계산 방식이 달라서 버전도 같이 저장해요</td></tr>
           <tr><td>USN</td><td>Ubuntu Security Notice. Ubuntu가 내는 보안 패치 공지 번호</td></tr>
           <tr><td>백포트</td><td>Ubuntu는 새 버전으로 올리지 않고 기존 버전에 보안 수정만 넣기도 해요. 그래서 버전 숫자만 보고 취약 여부를 판단하면 틀릴 수 있어요</td></tr>
-          <tr><td>noble</td><td>Ubuntu 24.04 LTS의 코드명</td></tr>
+          <tr><td>noble</td><td>Ubuntu 24.04 LTS의 코드명. Ubuntu JSON에는 <code>noble</code>로 나오지만 DB에는 <code>24.04</code>로 바꿔서 넣어요 (CHECK 제약이 숫자 형식만 받아요)</td></tr>
         </tbody>
       </table>
     </section>

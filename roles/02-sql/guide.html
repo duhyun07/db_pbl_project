@@ -14,6 +14,7 @@
       <nav>
         <a href="../../guide/">공통</a>
         <a href="../../github/">GitHub</a>
+        <a href="../../problems/">문제</a>
         <a href="../01-db/">① DB</a>
         <a href="../02-sql/" aria-current="page">② SQL</a>
         <a href="../03-app/">③ Python</a>
@@ -53,7 +54,8 @@
               <tr><td><code>sql/analysis_queries.sql</code></td><td>질문 7개의 쿼리 + 주석</td></tr>
               <tr><td><code>sql/query_catalog.json</code></td><td>③이 읽어서 실행하는 쿼리 목록</td></tr>
               <tr><td><code>sql/benchmark.py</code></td><td>실행 시간 반복 측정 스크립트</td></tr>
-              <tr><td><code>docs/query_validation.md</code></td><td>기댓값 vs 결과 검증표</td></tr>
+              <tr><td><code>sql/qNN.sql</code></td><td>채점용 제출 파일 (catalog와 같은 SQL, <a href="../../problems/">문제 #5~7</a>)</td></tr>
+              <tr><td><code>docs/query_validation.md</code></td><td>채점 결과 + 손 계산 근거</td></tr>
               <tr><td><code>docs/performance.md</code></td><td>인덱스 전후·방식별 비교표 (발표용)</td></tr>
             </tbody>
           </table>
@@ -486,34 +488,72 @@ ORDER BY days_overdue DESC, v.cvss_score DESC;</pre>
     <section class="panel step" id="step-6">
       <h2><span class="step-no">6</span>결과 검증과 검증표</h2>
       <h3 class="part">① 이 단계에서 만드는 것</h3>
-      <p><code>docs/query_validation.md</code> — 질문마다 손 계산 기댓값과 쿼리 결과를 나란히 적은 표.</p>
+      <p><code>sql/qNN.sql</code>(채점용 제출 파일)과 <code>docs/query_validation.md</code> — 채점기 결과를 붙여 넣고, 손 계산 근거를 같이 적은 문서.</p>
       <h3 class="part">② 왜 이렇게 하나</h3>
-      <p>"쿼리가 에러 없이 돌았다"는 정확성의 근거가 못 돼요. seed는 행이 9개뿐이라 손으로 셀 수 있어요. 손 계산과 쿼리 결과가 같다는 표가 채점 기준 3(정확성)의 가장 강한 증거예요.</p>
+      <p>"쿼리가 에러 없이 돌았다"는 정확성의 근거가 못 돼요. 채점기는 <strong>정해진 입력에 대한 기대 결과</strong>와 자동으로 비교하고, NULL 기한·<code>risk_accepted</code>·0건 서버 같은 함정을 숨은 케이스로 확인해 줘요. seed로 손 계산한 근거는 발표에서 "왜 이 답이 맞는지" 설명할 때 써요. 둘을 함께 적은 표가 채점 기준 3(정확성)의 가장 강한 증거예요.</p>
       <h3 class="part">③ 양식</h3>
+      <p>제출 파일은 <code>sql/query_catalog.json</code>에 넣는 SQL과 <strong>같은 문장</strong>이에요. 기준일이 필요한 쿼리는 <code>CURDATE()</code> 대신 파라미터(<code>%s</code>)로 받아요. 문제마다 파일 이름과 파라미터는 <a href="../../problems/">문제 페이지</a>에 있어요.</p>
 <pre># 분석 쿼리 검증표
 
-- 기준 데이터: db/seed.sql (가짜 데이터, 조치 건 9개)
-- 실행일: 2026-11-25 / MySQL 8.0.46
+- 채점: vuln-mgmt 채점기 (python judge/judge.py N) / MySQL 8.0.46
+- 실행일: 2026-11-25
 
-| 질문 | 손으로 계산한 기댓값 | 근거 (seed 주석 표의 행) | 쿼리 결과 | 일치 |
-|---|---|---|---|---|
-| Q5 기한 초과 미해결 | 2행: CVE-0000-0001(10일, 김보안), CVE-0000-0002(3일, 이서버) | 기한 지남: sv1(open), sv2(in_progress), sv5(patched → 제외) / 기한 없음: sv4, sv6, sv9 | 2행, 값 동일 | ✅ |
-| Q6 서버별 완료율 | web-prod-01 0.0, web-prod-02 33.3, dev-01 100.0 | web-prod-02: 3건 중 patched 1건 (risk_accepted 1건은 분모에 포함) | 0.0 / 33.3 / 100.0 | ✅ |
-| Q6 vs 뷰 | v_system_patch_rate와 같음 | 같은 정의 | 같음 | ✅ |</pre>
+## 1. 채점 결과
+| 문제 | 제출 파일 | 결과 |
+|---|---|---|
+| #5 기한 초과 미해결 | sql/q05.sql | 맞았습니다!! |
+| #6 완료율 + 집계 단위 | sql/q06_rate.sql, sql/q06_units.sql | 맞았습니다!! |
+| #7 평균보다 미해결이 많은 서버 | sql/q07.sql | 맞았습니다!! |
+
+## 2. 채점기 출력 (복사해서 그대로 붙여넣기)
+```
+[5] 기한을 넘긴 미해결 조치 건 (초안)
+  케이스 1: 통과
+  숨은 케이스 1: 통과
+  숨은 케이스 2: 통과
+  숨은 케이스 3: 통과
+맞았습니다!!
+```
+
+## 3. 처음에 틀렸던 것 (발표의 "문제 해결 과정")
+| 문제 | 처음 결과 | 원인 | 고친 것 |
+|---|---|---|---|
+| #5 | 틀렸습니다 (숨은 케이스 1) | 기한이 같은 날일 때 정렬 기준 누락 | ORDER BY에 hostname 추가 |
+
+## 4. seed로 손 계산한 근거 (예제가 왜 그 답인지)
+| 질문 | 손으로 계산한 기댓값 | 근거 (seed 주석 표의 행) |
+|---|---|---|
+| Q5 기한 초과 | 2행: CVE-0000-0001(김보안), CVE-0000-0002(이서버) | 기한 지남: sv1(open), sv2(in_progress), sv5(patched → 제외) / 기한 없음: sv4, sv6, sv9 |
+| Q6 서버별 완료율 | web-prod-01 0.0, web-prod-02 33.3, dev-01 100.0 | web-prod-02: 3건 중 patched 1건 (risk_accepted 1건은 분모에 포함) |</pre>
       <h3 class="part">④ 확인 방법</h3>
-      <p>표의 모든 행이 ✅이면 끝이에요. ❌가 있으면 "기댓값이 틀렸는지, 쿼리가 틀렸는지"를 적고 고친 뒤 다시 실행해요. 둘 중 무엇이 틀렸었는지도 남겨 두면 발표의 "문제 해결 과정"이 돼요.</p>
+<pre># vuln-mgmt 레포 루트에서
+python judge/judge.py 5
+python judge/judge.py 6
+python judge/judge.py 7</pre>
+<pre class="out">[5] 기한을 넘긴 미해결 조치 건 (초안)
+  케이스 1: 통과
+  숨은 케이스 1: 통과
+  숨은 케이스 2: 통과
+  숨은 케이스 3: 통과
+맞았습니다!!
+
+데이터 오염 검사: OK (채점 전후 행 수·상태 동일)</pre>
+      <p>세 문제 모두 <code>맞았습니다!!</code>면 끝이에요. 틀리면 기대와 실제를 비교해 고치고, "처음에 틀렸던 것" 표에 남겨요. (위 출력은 팀장이 만든 검증용 정답으로 실제 실행한 결과예요.)</p>
       <h3 class="part">⑤ 막히기 쉬운 부분</h3>
       <div class="table-wrap">
         <table class="trouble">
           <thead><tr><th>증상</th><th>원인</th><th>해결</th></tr></thead>
           <tbody>
-            <tr><td>날짜 관련 결과가 어제와 다름</td><td>seed 날짜가 <code>CURDATE()</code> 기준 상대값</td><td>날짜 대신 "N일 전" 같은 상대값으로 기댓값을 적기</td></tr>
-            <tr><td>팀원과 결과가 다름</td><td>한쪽 DB에 실험 데이터가 남음</td><td>둘 다 <code>docker compose down -v</code> 후 다시 적재</td></tr>
+            <tr><td>제출 파일이 없습니다: sql/q05.sql</td><td>파일 이름이나 위치가 다름</td><td>vuln-mgmt의 <code>sql/</code> 폴더에, 문제 페이지에 적힌 이름 그대로</td></tr>
+            <tr><td>제출 파일에는 SQL 문장이 하나만 있어야 합니다</td><td>한 파일에 쿼리를 여러 개 씀</td><td>질문 하나 = 파일 하나. 연습 쿼리는 <code>analysis_queries.sql</code>에</td></tr>
+            <tr><td>런타임 에러 (… 파라미터 바인딩 실패 - not all arguments converted …)</td><td><code>%s</code> 대신 <code>CURDATE()</code>를 씀</td><td>기준일 자리를 <code>%s</code>로</td></tr>
+            <tr><td>틀렸습니다 (숨은 케이스 n)</td><td>예제는 맞지만 함정(정렬 동점, NULL, 0건 서버)이 틀림</td><td>문제 페이지의 노트를 다시 읽기</td></tr>
+            <tr><td>Workbench에서 날짜 관련 결과가 어제와 다름</td><td>seed 날짜가 <code>CURDATE()</code> 기준 상대값</td><td>손 계산은 "N일 전" 같은 상대값으로. 채점기는 기준일 파라미터라 날짜와 상관없어요</td></tr>
           </tbody>
         </table>
       </div>
       <h3 class="part">⑥ 다음 사람에게 넘길 것</h3>
-      <p>검증이 끝난 쿼리만 catalog에 넣어요. ③은 "검증된 쿼리"만 화면에 쓰게 돼요.</p>
+      <p><code>맞았습니다!!</code>가 나온 쿼리만 catalog에 넣어요. ③은 "검증된 쿼리"만 화면에 쓰게 돼요.</p>
     </section>
 
     <!-- STEP 7 -->
